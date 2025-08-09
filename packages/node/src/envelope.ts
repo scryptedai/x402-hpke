@@ -130,6 +130,7 @@ export async function seal(args: {
     if (wantX402) Object.assign(headers, buildX402Headers(x402Normalized));
     if (appAllow.length > 0 && args.app) {
       for (const k of appAllow) {
+        if (k.toLowerCase().startsWith("replyto")) throw new PublicKeyNotInAadError("REPLY_TO_SIDECAR_FORBIDDEN");
         if (!(k in args.app)) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
         headers[`X-${args.namespace}-${k.replace(/[^A-Za-z0-9-]/g, "-")}`] = String(args.app[k]);
       }

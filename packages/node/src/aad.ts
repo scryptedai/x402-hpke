@@ -1,5 +1,5 @@
 import { TextEncoder } from "node:util";
-import { NsForbiddenError, NsCollisionError } from "./errors.js";
+import { NsForbiddenError, NsCollisionError, ReplyToMissingError, ReplyToFormatError } from "./errors.js";
 
 export type X402Fields = {
   invoiceId: string;
@@ -10,6 +10,10 @@ export type X402Fields = {
   txHash: string;
   expiry: number;
   priceHash: string;
+  // optional reply-to hints for responses (one of the two must be present)
+  replyToJwks?: string; // https URL to client JWKS
+  replyToKid?: string;  // client's key id
+  replyToJwk?: { kty: "OKP"; crv: "X25519"; x: string }; // raw client public JWK (fallback)
 };
 
 const enc = new TextEncoder();
@@ -39,9 +43,21 @@ export function validateX402(x: any): X402Fields {
     txHash: normalizeHex(String(x.txHash || ""), 64),
     expiry: Number(x.expiry),
     priceHash: normalizeHex(String(x.priceHash || ""), 64),
+    replyToJwks: x.replyToJwks ? String(x.replyToJwks) : undefined,
+    replyToKid: x.replyToKid ? String(x.replyToKid) : undefined,
+    replyToJwk: x.replyToJwk,
   };
   if (!v.invoiceId || !Number.isInteger(v.chainId) || !Number.isInteger(v.expiry)) {
     throw new Error("X402_SCHEMA");
+  }
+  // Enforce that we have sufficient reply-to info: either (replyToJwks + replyToKid) or (replyToJwk)
+  const hasJwks = !!v.replyToJwks && !!v.replyToKid;
+  const hasJwk = !!v.replyToJwk && v.replyToJwk.kty === "OKP" && v.replyToJwk.crv === "X25519" && typeof v.replyToJwk.x === "string";
+  if (!hasJwks && !hasJwk) {
+    throw new ReplyToMissingError("REPLY_TO_REQUIRED");
+  }
+  if (v.replyToJwks && !/^https:\/\//.test(v.replyToJwks)) {
+    throw new ReplyToFormatError("REPLY_TO_JWKS_HTTPS_REQUIRED");
   }
   return v;
 }

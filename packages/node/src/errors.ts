@@ -16,4 +16,7 @@ export class AadMismatchError extends X402Error {}
 export class PublicKeyNotInAadError extends X402Error {}
 export class AeadLimitError extends X402Error {}
 export class StreamNoncePrefixLenError extends X402Error {}
+export class ReplyToMissingError extends X402Error {}
+export class ReplyToSidecarForbiddenError extends X402Error {}
+export class ReplyToFormatError extends X402Error {}
  

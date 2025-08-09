@@ -6,6 +6,12 @@
 - Integers only for numeric fields.
 - AAD bytes = utf-8 bytes of the string "<ns>|v1|" + json(x402) + "|" + json(app?).
 
+Reply-to (required)
+- A request MUST contain reply-to information so a recipient can encrypt the response:
+  - Either: `replyToJwks` (HTTPS URL) and `replyToKid`, or
+  - `replyToJwk` (X25519 OKP public key).
+- `replyTo*` fields are part of AAD and MUST NOT be mirrored in sidecar.
+
 Encoding (normative)
 - JSON canonicalization: UTF-8; keys sorted lexicographically; compact separators (no spaces).
 - Base64url without padding for envelope fields `enc`, `aad`, and `ct`.
