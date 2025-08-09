@@ -1,7 +1,7 @@
 # Streaming Encryption (exported key)
 
-- Export streaming key from HPKE context: `export("stream:v1", 32)` (explicit export API is planned; for now, applications must derive a key/nonce prefix out-of-band or via application contract).
-- AEAD: XChaCha20-Poly1305 via libsodium.
+- Export streaming key from HPKE (Hybrid Public Key Encryption) context: `export("stream:v1", 32)` (explicit export API is planned; for now, applications must derive a key/nonce prefix out-of-band or via application contract).
+- AEAD (Authenticated Encryption with Associated Data): XChaCha20-Poly1305 via libsodium.
 - Nonce: 24 bytes = `prefix(16) || le64(seq)`.
 - Each chunk: `{ seq, ct }` with AEAD tag included; reject out-of-order or duplicate seq.
 - Rekey before large seq windows; no compression.

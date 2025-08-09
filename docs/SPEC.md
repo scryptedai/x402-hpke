@@ -1,13 +1,13 @@
-# Technical Design — x402-hpke (pinned for interop)
+# Technical Design — x402-hpke (Hybrid Public Key Encryption, HPKE; pinned for interop)
 
 - Ciphersuite (v1, pinned for maximum interop):
-  - KEM: X25519
-  - KDF: HKDF-SHA256
-  - AEAD (envelope): ChaCha20-Poly1305 (96-bit nonce, libsodium `*_ietf`)
+  - KEM (Key Encapsulation Mechanism): X25519
+  - KDF (Key Derivation Function): HKDF-SHA256
+  - AEAD (Authenticated Encryption with Associated Data, envelope): ChaCha20-Poly1305 (96-bit nonce, libsodium `*_ietf`)
   - Suite ID: `X25519-HKDF-SHA256-CHACHA20POLY1305`
   - Envelope MAY include `suite` field; APIs expose `hpke.suite` and `hpke.version`.
-- AAD is canonical; payload is opaque. Public sidecar is a projection of AAD; mismatch rejected.
-- JWKS: HTTPS-only fetch with Cache-Control/Expires; selection by `kid`.
+- AAD (Additional Authenticated Data) is canonical; payload is opaque. Public sidecar is a projection of AAD; mismatch rejected.
+- JWKS (JSON Web Key Set): HTTPS-only fetch with Cache-Control/Expires; selection by `kid`.
 - Interop: Node seals ↔ Python opens and vice versa. Cross-language tests included.
 
 Media type

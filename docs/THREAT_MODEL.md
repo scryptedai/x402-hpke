@@ -19,7 +19,7 @@ This document describes the security goals, non-goals, assumptions, attacker mod
 - Recipient controls and protects X25519 private key material.
 - JWKS is fetched via HTTPS with sane cache headers; local TTL clamping is enforced.
 - System clocks are reasonably synchronized (for `expiry` semantics).
-- Implementations use well-vetted primitives (libsodium) and follow this spec.
+- Implementations use well-vetted primitives (libsodium) and follow this specification.
 
 ## Attacker model
 - Network attacker: can observe, inject, replay, and modify messages in transit.
