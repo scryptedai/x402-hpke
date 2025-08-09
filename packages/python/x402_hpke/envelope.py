@@ -36,12 +36,20 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
 
     class _HPKE:
         def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None) -> Tuple[Dict, Optional[Dict]]:
+            if aead != "CHACHA20-POLY1305":
+                raise ValueError("AEAD_UNSUPPORTED")
             aad_bytes, xnorm, _ = build_canonical_aad(namespace, x402, app)
             eph_skpk = bindings.crypto_kx_keypair()
             eph_pub, eph_priv = eph_skpk
             recipient_pub = jwk_to_public_bytes(recipient_public_jwk)
+            if recipient_pub == b"\x00" * 32 or all(b == 0 for b in recipient_pub):
+                raise ValueError("ECDH_LOW_ORDER")
             shared = bindings.crypto_scalarmult(eph_priv, recipient_pub)
+            if shared == b"\x00" * 32 or all(b == 0 for b in shared):
+                raise ValueError("ECDH_LOW_ORDER")
             info = (namespace + ":v1").encode("utf-8")
+            # Bind KEM context: enc || pkR
+            info = (namespace + ":v1|" + _b64u(eph_pub) + "|" + _b64u(recipient_pub)).encode("utf-8")
             okm = _hkdf_sha256(shared, info, 32 + 24)
             key, nonce = okm[:32], okm[32:]
             ct = bindings.crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, aad_bytes, nonce, key)
@@ -86,6 +94,10 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
         def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None) -> Tuple[bytes, Dict, Optional[Dict]]:
             if envelope.get("ver") != "1" or envelope.get("ns", "").lower() == "x402":
                 raise ValueError("INVALID_ENVELOPE")
+            if envelope.get("aead") != aead:
+                raise ValueError("AEAD_MISMATCH")
+            if aead != "CHACHA20-POLY1305":
+                raise ValueError("AEAD_UNSUPPORTED")
             if expected_kid and envelope.get("kid") != expected_kid:
                 raise ValueError("KID_MISMATCH")
             aad_bytes = _b64u_to_bytes(envelope["aad"]) 
@@ -106,8 +118,15 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                     raise ValueError("AAD_MISMATCH")
             sk = jwk_to_private_bytes(recipient_private_jwk)
             eph_pub = _b64u_to_bytes(envelope["enc"]) 
+            if eph_pub == b"\x00" * 32 or all(b == 0 for b in eph_pub):
+                raise ValueError("ECDH_LOW_ORDER")
             shared = bindings.crypto_scalarmult(sk, eph_pub)
+            if shared == b"\x00" * 32 or all(b == 0 for b in shared):
+                raise ValueError("ECDH_LOW_ORDER")
             info = (envelope["ns"] + ":v1").encode("utf-8")
+            # Bind KEM context: enc || pkR
+            pkR = bindings.crypto_scalarmult_base(sk)
+            info = (envelope["ns"] + ":v1|" + envelope["enc"] + "|" + _b64u(pkR)).encode("utf-8")
             okm = _hkdf_sha256(shared, info, 32 + 24)
             key, nonce = okm[:32], okm[32:]
             ct = _b64u_to_bytes(envelope["ct"])

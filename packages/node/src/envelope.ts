@@ -2,7 +2,7 @@ import sodium from "libsodium-wrappers";
 import { buildCanonicalAad, X402Fields } from "./aad.js";
 import { jwkToPublicKeyBytes, jwkToPrivateKeyBytes, OkpJwk } from "./keys.js";
 import { buildX402Headers } from "./headers.js";
-import { createHmac } from "node:crypto";
+import { createHmac } from "crypto";
 
 function b64u(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -24,6 +24,13 @@ function hkdfSha256(ikm: Uint8Array, info: Uint8Array, length: number): Uint8Arr
     okm = Buffer.concat([okm, h]);
   }
   return new Uint8Array(okm.slice(0, length));
+}
+
+function isAllZero(bytes: Uint8Array): boolean {
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] !== 0) return false;
+  }
+  return true;
 }
 
 export type Envelope = {
@@ -56,7 +63,10 @@ export async function seal(args: {
   };
 }): Promise<{ envelope: Envelope; publicHeaders?: Record<string, string>; publicJson?: Record<string, string> }> {
   await sodium.ready;
-  const { namespace, kem, kdf, aead, kid, recipientPublicJwk, plaintext, x402, app, render } = args;
+  const { namespace, kem, kdf, aead, kid, recipientPublicJwk, plaintext, x402, app } = args;
+  if (aead !== "CHACHA20-POLY1305") {
+    throw Object.assign(new Error("AEAD_UNSUPPORTED"), { code: 501 });
+  }
   if ((plaintext as any) && typeof plaintext === 'object') {
     // guardrail: if caller mistakenly includes x402/app keys in plaintext object, reject in v1 (payload must be opaque bytes)
   }
@@ -64,9 +74,15 @@ export async function seal(args: {
 
   const eph = sodium.crypto_kx_keypair();
   const recipientPub = jwkToPublicKeyBytes(recipientPublicJwk);
+  if (isAllZero(recipientPub)) {
+    throw Object.assign(new Error("ECDH_LOW_ORDER"), { code: 400 });
+  }
   const shared = sodium.crypto_scalarmult(eph.privateKey, recipientPub);
+  if (isAllZero(shared)) {
+    throw Object.assign(new Error("ECDH_LOW_ORDER"), { code: 400 });
+  }
 
-  const info = new TextEncoder().encode(`${namespace}:v1`);
+  const info = new TextEncoder().encode(`${namespace}:v1|${b64u(eph.publicKey)}|${b64u(recipientPub)}`);
   const okm = hkdfSha256(shared, info, 32 + 24);
   const key = okm.slice(0, 32);
   const nonce = okm.slice(32);
@@ -125,9 +141,15 @@ export async function open(args: {
   publicJson?: Record<string, string>;
 }): Promise<{ plaintext: Uint8Array; x402: X402Fields; app?: Record<string, any> }> {
   await sodium.ready;
-  const { namespace, expectedKid, recipientPrivateJwk, envelope, headers } = args;
+  const { namespace, expectedKid, recipientPrivateJwk, envelope } = args;
   if (envelope.ver !== "1" || envelope.ns.toLowerCase() === "x402") {
     throw Object.assign(new Error("INVALID_ENVELOPE"), { code: 400 });
+  }
+  if (envelope.aead !== args.aead) {
+    throw Object.assign(new Error("AEAD_MISMATCH"), { code: 400 });
+  }
+  if (args.aead !== "CHACHA20-POLY1305") {
+    throw Object.assign(new Error("AEAD_UNSUPPORTED"), { code: 501 });
   }
   if (expectedKid && envelope.kid !== expectedKid) {
     throw Object.assign(new Error("KID_MISMATCH"), { code: 400 });
@@ -156,9 +178,16 @@ export async function open(args: {
 
   const sk = jwkToPrivateKeyBytes(recipientPrivateJwk);
   const ephPub = b64uToBytes(envelope.enc);
+  if (isAllZero(ephPub)) {
+    throw Object.assign(new Error("ECDH_LOW_ORDER"), { code: 400 });
+  }
   const shared = sodium.crypto_scalarmult(sk, ephPub);
+  if (isAllZero(shared)) {
+    throw Object.assign(new Error("ECDH_LOW_ORDER"), { code: 400 });
+  }
 
-  const info = new TextEncoder().encode(`${namespace}:v1`);
+  const pkR = sodium.crypto_scalarmult_base(sk);
+  const info = new TextEncoder().encode(`${namespace}:v1|${envelope.enc}|${b64u(pkR)}`);
   const okm = hkdfSha256(shared, info, 32 + 24);
   const key = okm.slice(0, 32);
   const nonce = okm.slice(32);
