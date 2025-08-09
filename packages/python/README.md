@@ -68,4 +68,4 @@ pt = open_chunk_xchacha(key, prefix16, seq, ct)
 
 ## Notes
 
-- AEAD is pinned to XChaCha20-Poly1305 for v1. AES-GCM is not supported.
+ - AEAD is pinned to ChaCha20-Poly1305 for v1 (envelope). AES-256-GCM may be offered as an optional profile in future versions for FIPS-oriented environments; suite pinning remains per-version.
