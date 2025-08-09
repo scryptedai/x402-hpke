@@ -1,7 +1,8 @@
 import sodium from "libsodium-wrappers";
-import { buildCanonicalAad, X402Fields } from "./aad.js";
+import { buildCanonicalAad, X402Core } from "./aad.js";
 import { jwkToPublicKeyBytes, jwkToPrivateKeyBytes, OkpJwk } from "./keys.js";
-import { buildX402Headers } from "./headers.js";
+import { synthesizePaymentHeaderValue } from "./payment.js";
+import { isApprovedExtensionHeader } from "./extensions.js";
 import { createHmac, timingSafeEqual } from "crypto";
 import {
   AeadMismatchError,
@@ -11,7 +12,6 @@ import {
   InvalidEnvelopeError,
   KidMismatchError,
   PublicKeyNotInAadError,
-  ReplyToSidecarForbiddenError,
 } from "./errors.js";
 
 function b64u(bytes: Uint8Array): string {
@@ -67,33 +67,26 @@ export async function seal(args: {
   kid: string;
   recipientPublicJwk: OkpJwk;
   plaintext: Uint8Array;
-  x402: X402Fields;
+  x402: X402Core;
   app?: Record<string, any>;
   public?: {
-    x402Headers?: boolean;
-    appHeaderAllowlist?: string[];
     as?: "headers" | "json";
+    revealPayment?: boolean; // emit X-PAYMENT or X-PAYMENT-RESPONSE from core
+    extensionsAllowlist?: string[]; // emit selected approved extension headers
   };
   // Test-only deterministic ephemeral seed for KAT generation
   __testEphSeed32?: Uint8Array;
 }): Promise<{ envelope: Envelope; publicHeaders?: Record<string, string>; publicJson?: Record<string, string> }> {
   await sodium.ready;
   const { namespace, kem, kdf, aead, kid, recipientPublicJwk, plaintext, x402, app } = args;
-  // Preflight: forbid exposing reply-to metadata or replyPublicOk via sidecar allowlist
-  const preflightAllow = args.public?.appHeaderAllowlist ?? [];
-  for (const k of preflightAllow) {
-    const kl = String(k).toLowerCase();
-    if (kl.startsWith("replyto") || kl === "replypublicok") {
-      throw new ReplyToSidecarForbiddenError("REPLY_TO_SIDECAR_FORBIDDEN");
-    }
-  }
+  // No legacy sidecar preflight; only extensions allowlist handled below
   if (aead !== "CHACHA20-POLY1305") {
     throw new AeadUnsupportedError("AEAD_UNSUPPORTED");
   }
   if ((plaintext as any) && typeof plaintext === 'object') {
     // guardrail: if caller mistakenly includes x402/app keys in plaintext object, reject in v1 (payload must be opaque bytes)
   }
-  const { aadBytes, x402Normalized } = buildCanonicalAad(namespace, x402, app, { skipReplyToCheck: false });
+  const { aadBytes, x402Normalized, appNormalized } = buildCanonicalAad(namespace, x402, app);
 
   const eph = args.__testEphSeed32
     ? sodium.crypto_kx_seed_keypair(args.__testEphSeed32)
@@ -131,31 +124,36 @@ export async function seal(args: {
   };
 
   const as = args.public?.as ?? "headers";
-  const wantX402 = !!args.public?.x402Headers;
-  const appAllow = args.public?.appHeaderAllowlist ?? [];
-  if (!wantX402 && appAllow.length === 0) return { envelope };
+  const extAllow = args.public?.extensionsAllowlist ?? [];
+  const wantPayment = !!args.public?.revealPayment;
+  if (!wantPayment && extAllow.length === 0) return { envelope };
   if (as === "headers") {
     const headers: Record<string, string> = {};
-    if (wantX402) Object.assign(headers, buildX402Headers(x402Normalized));
-    if (appAllow.length > 0 && args.app) {
-      for (const k of appAllow) {
-        const kl = k.toLowerCase();
-        if (kl.startsWith("replyto") || kl === "replypublicok") {
-          // If app attempts to expose reply-to metadata or replyPublicOk, error clearly
-          throw new ReplyToSidecarForbiddenError("REPLY_TO_SIDECAR_FORBIDDEN");
-        }
-        if (!(k in args.app)) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
-        headers[`X-${args.namespace}-${k.replace(/[^A-Za-z0-9-]/g, "-")}`] = String(args.app[k]);
+    if (wantPayment) {
+      const h = x402Normalized.header.toUpperCase() === "X-PAYMENT" ? "X-PAYMENT" : "X-PAYMENT-RESPONSE";
+      headers[h] = synthesizePaymentHeaderValue(x402Normalized.payload);
+    }
+    if (extAllow.length > 0 && appNormalized && Array.isArray(appNormalized.extensions)) {
+      for (const wanted of extAllow) {
+        if (!isApprovedExtensionHeader(wanted)) continue;
+        const found = appNormalized.extensions.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
+        if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
+        headers[found.header] = synthesizePaymentHeaderValue(found.payload);
       }
     }
     return { envelope, publicHeaders: headers };
   } else {
     const json: Record<string, string> = {};
-    if (wantX402) Object.assign(json, buildX402Headers(x402Normalized));
-    if (appAllow.length > 0 && args.app) {
-      for (const k of appAllow) {
-        if (!(k in args.app)) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
-        json[`X-${args.namespace}-${k}`] = String(args.app[k]);
+    if (wantPayment) {
+      const h = x402Normalized.header.toUpperCase() === "X-PAYMENT" ? "X-PAYMENT" : "X-PAYMENT-RESPONSE";
+      json[h] = synthesizePaymentHeaderValue(x402Normalized.payload);
+    }
+    if (extAllow.length > 0 && appNormalized && Array.isArray(appNormalized.extensions)) {
+      for (const wanted of extAllow) {
+        if (!isApprovedExtensionHeader(wanted)) continue;
+        const found = appNormalized.extensions.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
+        if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
+        json[found.header] = synthesizePaymentHeaderValue(found.payload);
       }
     }
     return { envelope, publicJson: json };
@@ -172,7 +170,7 @@ export async function open(args: {
   envelope: Envelope;
   publicHeaders?: Record<string, string>;
   publicJson?: Record<string, string>;
-}): Promise<{ plaintext: Uint8Array; x402: X402Fields; app?: Record<string, any> }> {
+}): Promise<{ plaintext: Uint8Array; x402: X402Core; app?: Record<string, any> }> {
   await sodium.ready;
   const { namespace, expectedKid, recipientPrivateJwk, envelope } = args;
   if (envelope.ver !== "1" || envelope.ns.toLowerCase() === "x402") {
@@ -191,44 +189,6 @@ export async function open(args: {
   const aadBytes = b64uToBytes(envelope.aad);
 
   const sidecar = args.publicHeaders ?? args.publicJson;
-  if (sidecar) {
-    const get = (k: string) => {
-      // case-insensitive header matching; trim optional whitespace
-      const found = Object.keys(sidecar).find((h) => h.toLowerCase() === k.toLowerCase());
-      const v = found ? (sidecar as any)[found] : undefined;
-      return typeof v === "string" ? v.trim() : v;
-    };
-    const hx: any = {
-      invoiceId: get("X-X402-Invoice-Id"),
-      chainId: Number(get("X-X402-Chain-Id")),
-      tokenContract: get("X-X402-Token-Contract"),
-      amount: get("X-X402-Amount"),
-      recipient: get("X-X402-Recipient"),
-      txHash: get("X-X402-Tx-Hash"),
-      expiry: Number(get("X-X402-Expiry")),
-      priceHash: get("X-X402-Price-Hash"),
-    };
-    // Preserve reply-to and public-reply fields from original x402 for JSON-equivalence
-    const origStr = Buffer.from(aadBytes).toString("utf8");
-    const origParts = origStr.split("|");
-    const origXJson = origParts[2] ?? "";
-    let origX: any = {};
-    try { origX = JSON.parse(origXJson); } catch {}
-    hx.replyToJwks = origX.replyToJwks;
-    hx.replyToKid = origX.replyToKid;
-    hx.replyToJwk = origX.replyToJwk;
-    hx.replyPublicOk = origX.replyPublicOk;
-
-    const rebuilt = buildCanonicalAad(namespace, hx, undefined, { skipReplyToCheck: true });
-    const rebuiltStr = Buffer.from(rebuilt.aadBytes).toString("utf8");
-    const rebuiltParts = rebuiltStr.split("|");
-    const rebuiltXJson = rebuiltParts[2] ?? "";
-    const a = Buffer.from(origXJson, "utf8");
-    const b = Buffer.from(rebuiltXJson, "utf8");
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      throw new AadMismatchError("AAD_MISMATCH");
-    }
-  }
 
   const sk = jwkToPrivateKeyBytes(recipientPrivateJwk);
   const ephPub = b64uToBytes(envelope.enc);
@@ -256,8 +216,38 @@ export async function open(args: {
   if (parts.length < 4) throw new InvalidEnvelopeError("INVALID_ENVELOPE");
   const xJson = parts[2];
   const appJson = parts[3];
-  const x402 = JSON.parse(xJson) as X402Fields;
+  const x402 = JSON.parse(xJson) as X402Core;
   const app = appJson ? (JSON.parse(appJson) as Record<string, any>) : undefined;
+
+  // Verify sidecar payment/extension headers against AAD if provided
+  if (sidecar) {
+    const findHeader = (k: string) => {
+      const found = Object.keys(sidecar).find((h) => h.toLowerCase() === k.toLowerCase());
+      return found ? String((sidecar as any)[found]).trim() : undefined;
+    };
+    const xp = findHeader("X-PAYMENT");
+    const xpr = findHeader("X-PAYMENT-RESPONSE");
+    if (xp && x402.header === "X-Payment") {
+      const expect = synthesizePaymentHeaderValue(x402.payload);
+      if (xp !== expect) throw new AadMismatchError("AAD_MISMATCH");
+    }
+    if (xpr && x402.header === "X-Payment-Response") {
+      const expect = synthesizePaymentHeaderValue(x402.payload);
+      if (xpr !== expect) throw new AadMismatchError("AAD_MISMATCH");
+    }
+    // Extensions verification
+    for (const k of Object.keys(sidecar)) {
+      if (!isApprovedExtensionHeader(k)) continue;
+      const extList: any[] = (app && Array.isArray((app as any).extensions)) ? (app as any).extensions : [];
+      const found = extList.find((e) => String(e.header).toLowerCase() === k.toLowerCase());
+      if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
+      const expect = synthesizePaymentHeaderValue(found.payload);
+      const got = String((sidecar as any)[k]).trim();
+      if (got !== expect) throw new AadMismatchError("AAD_MISMATCH");
+    }
+  }
+
+  // Legacy payment/app sidecar verification removed; only verify against core and extensions
 
   return { plaintext: pt, x402, app };
 }

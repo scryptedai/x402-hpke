@@ -114,12 +114,15 @@ env, headers = hpke.seal(kid="kid1", recipient_public_jwk=PUB, plaintext=payload
 pt, x, app = hpke.open(recipient_private_jwk=PRIV, envelope=env, expected_kid="kid1", public_headers=headers)
 ```
 
-## Public sidecar (headers/JSON)
-- Default: no `X-X402-*` headers; all x402 fields are inside AAD.
-- Optional: `public` in `seal()` produces either `publicHeaders` or `publicJson` with a projection of AAD.
-- Server must rebuild AAD from sidecar and require byte-for-byte equality. Mismatch → `400 AAD_MISMATCH`.
+## Transport sidecar (headers/JSON)
+- Default: no transport headers are emitted; all metadata (including X-PAYMENT / X-PAYMENT-RESPONSE) is bound inside AAD.
+- Optional: `public` in `seal()` can emit sidecars:
+  - `x402Headers: true` → emits `X-X402-*` informational headers (projection of AAD x402 fields)
+  - `revealPayment: true` → emits `X-PAYMENT` or `X-PAYMENT-RESPONSE` as base64-encoded canonical JSON, per spec
+  - `appHeaderAllowlist` → emits `X-<ns>-<Key>` for allowed app keys
+- Server must rebuild AAD from the sidecar and require byte-for-byte equality. Mismatch → `400 AAD_MISMATCH`.
 
-See `docs/HEADERS.md` for exact maps and examples.
+Spec reference: see Coinbase x402 repo [coinbase/x402](https://github.com/coinbase/x402).
 
 ## JWKS utilities
 - Node: `fetchJwks(url)`, `setJwks(url, jwks)`, `selectJwkFromJwks(jwks, kid)`

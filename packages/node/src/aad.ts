@@ -1,98 +1,100 @@
 import { TextEncoder } from "node:util";
-import { NsForbiddenError, NsCollisionError, ReplyToMissingError, ReplyToFormatError } from "./errors.js";
+import { NsForbiddenError, NsCollisionError } from "./errors.js";
+import { X402Extension, isApprovedExtensionHeader, canonicalizeExtensionHeader } from "./extensions.js";
 
-export type X402Fields = {
-  invoiceId: string;
-  chainId: number;
-  tokenContract: string;
-  amount: string;
-  recipient: string;
-  txHash: string;
-  expiry: number;
-  priceHash: string;
-  // optional reply-to hints for responses (one of the two must be present)
-  replyToJwks?: string; // https URL to client JWKS
-  replyToKid?: string;  // client's key id
-  replyToJwk?: { kty: "OKP"; crv: "X25519"; x: string }; // raw client public JWK (fallback)
-  replyPublicOk?: boolean; // optional opt-in for plaintext replies
+export type X402Core = {
+  header: string; // "X-Payment" | "X-Payment-Response" (case-insensitive input)
+  payload: Record<string, any>;
+  // Additional KV allowed and included in canonicalization
+  [k: string]: any;
 };
 
 const enc = new TextEncoder();
 
-function normalizeHex(input: string, expectedLen?: number): string {
-  if (typeof input !== "string") throw new Error("X402_SCHEMA");
-  const s = input.toLowerCase();
-  if (!s.startsWith("0x")) throw new Error("X402_SCHEMA");
-  if (!/^0x[0-9a-f]+$/.test(s)) throw new Error("X402_SCHEMA");
-  if (expectedLen && s.length !== 2 + expectedLen) throw new Error("X402_SCHEMA");
-  return s;
+function deepCanonicalize(value: any): any {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(deepCanonicalize);
+  const keys = Object.keys(value).sort();
+  const out: any = {};
+  for (const k of keys) out[k] = deepCanonicalize(value[k]);
+  return out;
 }
 
-function validateAmount(amount: string): string {
-  if (typeof amount !== "string") throw new Error("X402_SCHEMA");
-  if (!/^(0|[1-9][0-9]*)$/.test(amount)) throw new Error("X402_SCHEMA");
-  return amount;
+function canonicalizeHeaderCase(h: string): "X-Payment" | "X-Payment-Response" {
+  const s = String(h).toLowerCase();
+  if (s === "x-payment") return "X-Payment";
+  if (s === "x-payment-response") return "X-Payment-Response";
+  throw new Error("X402_HEADER");
 }
 
-export function validateX402(x: any, opts?: { skipReplyToCheck?: boolean }): X402Fields {
-  const v: X402Fields = {
-    invoiceId: String(x.invoiceId || ""),
-    chainId: Number(x.chainId),
-    tokenContract: normalizeHex(String(x.tokenContract || ""), 40),
-    amount: validateAmount(String(x.amount || "")),
-    recipient: normalizeHex(String(x.recipient || ""), 40),
-    txHash: normalizeHex(String(x.txHash || ""), 64),
-    expiry: Number(x.expiry),
-    priceHash: normalizeHex(String(x.priceHash || ""), 64),
-    replyToJwks: x.replyToJwks ? String(x.replyToJwks) : undefined,
-    replyToKid: x.replyToKid ? String(x.replyToKid) : undefined,
-    replyToJwk: x.replyToJwk,
-    replyPublicOk: typeof x.replyPublicOk === "boolean" ? x.replyPublicOk : undefined,
-  };
-  if (!v.invoiceId || !Number.isInteger(v.chainId) || !Number.isInteger(v.expiry)) {
-    throw new Error("X402_SCHEMA");
+export function validateX402Core(x: any): X402Core {
+  const header = canonicalizeHeaderCase(x?.header);
+  const payload = x?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length === 0) {
+    throw new Error("X402_PAYLOAD");
   }
-  if (!opts?.skipReplyToCheck) {
-    // Enforce that we have sufficient reply-to info: either (replyToJwks + replyToKid) or (replyToJwk)
-    const hasJwks = !!v.replyToJwks && !!v.replyToKid;
-    const hasJwk = !!v.replyToJwk && v.replyToJwk.kty === "OKP" && v.replyToJwk.crv === "X25519" && typeof v.replyToJwk.x === "string";
-    if (!hasJwks && !hasJwk) {
-      throw new ReplyToMissingError("REPLY_TO_REQUIRED");
-    }
-    if (v.replyToJwks && !/^https:\/\//.test(v.replyToJwks)) {
-      throw new ReplyToFormatError("REPLY_TO_JWKS_HTTPS_REQUIRED");
-    }
+  const extra: any = {};
+  for (const k of Object.keys(x || {})) {
+    if (k === "header" || k === "payload") continue;
+    extra[k] = x[k];
   }
-  return v;
+  return { header, payload, ...extra };
 }
 
 function canonicalJson(obj: Record<string, any>): string {
-  const keys = Object.keys(obj).sort();
-  const out: any = {};
-  for (const k of keys) out[k] = obj[k];
-  return JSON.stringify(out);
+  return JSON.stringify(deepCanonicalize(obj));
 }
 
-export function buildCanonicalAad(namespace: string, x402: X402Fields, app?: Record<string, any>, opts?: { skipReplyToCheck?: boolean }): {
+export function buildCanonicalAad(
+  namespace: string,
+  x402: X402Core,
+  app?: Record<string, any>
+): {
   aadBytes: Uint8Array;
-  x402Normalized: X402Fields;
+  x402Normalized: X402Core;
   appNormalized?: Record<string, any>;
 } {
   if (!namespace || namespace.toLowerCase() === "x402") throw new NsForbiddenError("NS_FORBIDDEN");
-  const x = validateX402(x402, opts);
+  const x = validateX402Core(x402);
+  // Prepare app normalization with special handling for extensions array
+  let normalizedApp: Record<string, any> | undefined;
   if (app) {
-    for (const k of Object.keys(app)) {
-      if (k === "x402" || k.startsWith("x402") || k in x) throw new NsCollisionError("NS_COLLISION");
+    if ("x402" in app || Object.keys(app).some((k) => k.toLowerCase().startsWith("x402"))) {
+      throw new NsCollisionError("NS_COLLISION");
     }
+    const copy: any = {};
+    for (const k of Object.keys(app)) copy[k] = app[k];
+    if (Array.isArray(copy.extensions)) {
+      const seen = new Set<string>();
+      const exts: X402Extension[] = [];
+      for (const e of copy.extensions as any[]) {
+        const hdr = String(e?.header || "");
+        if (!isApprovedExtensionHeader(hdr)) throw new Error("X402_EXTENSION_UNAPPROVED");
+        const canonHdr = canonicalizeExtensionHeader(hdr);
+        if (seen.has(canonHdr.toLowerCase())) throw new Error("X402_EXTENSION_DUPLICATE");
+        const payload = e?.payload;
+        if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length === 0) {
+          throw new Error("X402_EXTENSION_PAYLOAD");
+        }
+        const extExtra: any = {};
+        for (const k2 of Object.keys(e)) if (k2 !== "header" && k2 !== "payload") extExtra[k2] = e[k2];
+        exts.push({ header: canonHdr, payload, ...extExtra });
+        seen.add(canonHdr.toLowerCase());
+      }
+      // Sort extensions by header (case-insensitive)
+      exts.sort((a, b) => a.header.toLowerCase().localeCompare(b.header.toLowerCase()));
+      copy.extensions = exts.map((e) => deepCanonicalize(e));
+    }
+    normalizedApp = JSON.parse(canonicalJson(copy));
   }
   const xJson = canonicalJson(x);
-  const appJson = app ? canonicalJson(app) : "";
+  const appJson = normalizedApp ? canonicalJson(normalizedApp) : "";
   const prefix = `${namespace}|v1|`;
-  const suffix = app ? `|${appJson}` : "|";
+  const suffix = normalizedApp ? `|${appJson}` : "|";
   const full = prefix + xJson + suffix;
-  return { aadBytes: enc.encode(full), x402Normalized: x, appNormalized: app ? JSON.parse(appJson) : undefined };
+  return { aadBytes: enc.encode(full), x402Normalized: JSON.parse(xJson), appNormalized: normalizedApp };
 }
 
-export function canonicalAad(namespace: string, x402: X402Fields, app?: Record<string, any>): Uint8Array {
+export function canonicalAad(namespace: string, x402: X402Core, app?: Record<string, any>): Uint8Array {
   return buildCanonicalAad(namespace, x402, app).aadBytes;
 }

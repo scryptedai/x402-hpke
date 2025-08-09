@@ -1,17 +1,28 @@
 from .envelope import create_hpke
-from .aad import canonical_aad, validate_x402, build_canonical_aad
+from .payment import (
+    synthesize_payment_header_value,
+    parse_payment_header_value,
+    normalize_payment_like,
+    derive_extended_app_from_payment,
+)
+from .aad import canonical_aad, build_canonical_aad
 from .keys import generate_keypair, generate_public_jwk
-from .headers import build_x402_headers
 from .streaming import seal_chunk_xchacha, open_chunk_xchacha
+from .extensions import APPROVED_EXTENSION_HEADERS, is_approved_extension_header, canonicalize_extension_header
 
 __all__ = [
     "create_hpke",
     "canonical_aad",
     "build_canonical_aad",
-    "validate_x402",
     "generate_keypair",
     "generate_public_jwk",
-    "build_x402_headers",
     "seal_chunk_xchacha",
     "open_chunk_xchacha",
+    "synthesize_payment_header_value",
+    "parse_payment_header_value",
+    "normalize_payment_like",
+    "derive_extended_app_from_payment",
+    "APPROVED_EXTENSION_HEADERS",
+    "is_approved_extension_header",
+    "canonicalize_extension_header",
 ]

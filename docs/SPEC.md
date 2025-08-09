@@ -13,6 +13,14 @@
 - JWKS (JSON Web Key Set): HTTPS-only fetch with Cache-Control/Expires; selection by `kid`.
 - Interop: Node seals ↔ Python opens and vice versa. Cross-language tests included.
 
+X-PAYMENT and X-PAYMENT-RESPONSE (first-class)
+- These headers are part of the public x402 transport. This library binds them into AAD by default, and emits them only when `public.revealPayment` is set.
+- Header values: compact JSON. The library also accepts base64-encoded JSON for robustness, but emits JSON by default.
+- Minimum X-PAYMENT payload (EVM exact-on-EIP-3009 example):
+  - `x402Version: 1`, `scheme: "exact"`, `network: <string>`, `payload: { signature: <0x-hex>, authorization: { from, to, value, validAfter, validBefore, nonce } }`.
+- X-PAYMENT-RESPONSE payload: `x402Version`, `scheme`, `network`, `payload` (opaque, integrity-protected when included in AAD).
+- See upstream docs: `https://github.com/coinbase/x402` and Coinbase developer docs.
+
 Media type
 - Provisional media type for content negotiation: `application/x402-envelope+json`.
 

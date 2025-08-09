@@ -1,8 +1,9 @@
 # Headers / Sidecar
 
-- Default: no `X-X402-*` headers emitted; all x402 fields live in AAD.
+- Default: no transport headers are emitted; AAD binds all metadata.
 - Optional sidecar via `public` in `seal()`:
-  - `x402Headers: true` → emit `X-X402-*`
+  - `x402Headers: true` → emit `X-X402-*` informational projection of x402 fields
+  - `revealPayment: true` → emit either `X-PAYMENT` or `X-PAYMENT-RESPONSE` (never both) as base64-encoded canonical JSON per the upstream x402 spec
   - `appHeaderAllowlist: ["traceId", ...]` → emit `X-<ns>-Trace-Id`, etc.
   - `as`: "headers" (default) or "json" sidecar
 - Server must rebuild projection from AAD and compare byte-for-byte. Mismatch → `400 AAD_MISMATCH`.
@@ -50,3 +51,5 @@ JSON sidecar payload alongside envelope:
   "X-myapp-Trace-Id": "abc-123"
 }
 ```
+
+Spec reference: Coinbase x402 [coinbase/x402](https://github.com/coinbase/x402)

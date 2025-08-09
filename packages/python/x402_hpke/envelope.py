@@ -12,7 +12,8 @@ from .errors import (
     AadMismatch,
 )
 from .keys import jwk_to_public_bytes, jwk_to_private_bytes
-from .headers import build_x402_headers
+from .payment import synthesize_payment_header_value
+from .extensions import is_approved_extension_header
 from nacl import bindings
 import base64
 import hmac
@@ -50,12 +51,6 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
         def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
-            # Preflight: forbid exposing reply-to metadata or replyPublicOk via sidecar allowlist
-            app_allow = (public or {}).get("appHeaderAllowlist", []) or []
-            for k in app_allow:
-                kl = str(k).lower()
-                if kl.startswith("replyto") or kl == "replypublicok":
-                    raise PublicKeyNotInAad("REPLY_TO_SIDECAR_FORBIDDEN")
             aad_bytes, xnorm, _ = build_canonical_aad(namespace, x402, app)
             eph_skpk = (
                 bindings.crypto_kx_seed_keypair(__test_eph_seed32)
@@ -98,35 +93,37 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 "ct": _b64u(ct),
             }
             as_kind = (public or {}).get("as", "headers")
-            want_x402 = bool((public or {}).get("x402Headers", False))
-            app_allow = (public or {}).get("appHeaderAllowlist", []) or []
-            if not want_x402 and len(app_allow) == 0:
+            reveal_payment = bool((public or {}).get("revealPayment", False))
+            ext_allow = (public or {}).get("extensionsAllowlist", []) or []
+            if not reveal_payment and len(ext_allow) == 0:
                 return envelope, None
             if as_kind == "headers":
                 hdrs: Dict[str, str] = {}
-                if want_x402:
-                    hdrs.update(build_x402_headers(xnorm))
-                if app_allow and app:
-                    for k in app_allow:
-                        if k not in app:
+                if reveal_payment:
+                    h = "X-PAYMENT" if str(xnorm.get("header", "")).lower() == "x-payment" else "X-PAYMENT-RESPONSE"
+                    hdrs[h] = synthesize_payment_header_value(xnorm.get("payload", {}))
+                if ext_allow and app and isinstance(app.get("extensions"), list):
+                    for wanted in ext_allow:
+                        if not is_approved_extension_header(wanted):
+                            continue
+                        found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                        if not found:
                             raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
-                        kl = k.lower()
-                        if kl.startswith("replyto") or kl == "replypublicok":
-                            raise PublicKeyNotInAad("REPLY_TO_SIDECAR_FORBIDDEN")
-                        hdrs[f"X-{namespace}-{k}"] = str(app[k])
+                        hdrs[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
                 return envelope, hdrs
             else:
                 j: Dict[str, str] = {}
-                if want_x402:
-                    j.update(build_x402_headers(xnorm))
-                if app_allow and app:
-                    for k in app_allow:
-                        if k not in app:
+                if reveal_payment:
+                    h = "X-PAYMENT" if str(xnorm.get("header", "")).lower() == "x-payment" else "X-PAYMENT-RESPONSE"
+                    j[h] = synthesize_payment_header_value(xnorm.get("payload", {}))
+                if ext_allow and app and isinstance(app.get("extensions"), list):
+                    for wanted in ext_allow:
+                        if not is_approved_extension_header(wanted):
+                            continue
+                        found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                        if not found:
                             raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
-                        kl = k.lower()
-                        if kl.startswith("replyto") or kl == "replypublicok":
-                            raise PublicKeyNotInAad("REPLY_TO_SIDECAR_FORBIDDEN")
-                        j[f"X-{namespace}-{k}"] = str(app[k])
+                        j[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
                 return envelope, j
 
         def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None) -> Tuple[bytes, Dict, Optional[Dict]]:
@@ -140,25 +137,6 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 raise KidMismatch("KID_MISMATCH")
             aad_bytes = _b64u_to_bytes(envelope["aad"]) 
             sidecar = public_headers or public_json
-            if sidecar is not None:
-                def _get(hname: str) -> str | None:
-                    for k, v in sidecar.items():
-                        if isinstance(k, str) and k.lower() == hname.lower():
-                            return v.strip() if isinstance(v, str) else v
-                    return None
-                hx = {
-                    "invoiceId": _get("X-X402-Invoice-Id"),
-                    "chainId": int(_get("X-X402-Chain-Id")),
-                    "tokenContract": _get("X-X402-Token-Contract"),
-                    "amount": _get("X-X402-Amount"),
-                    "recipient": _get("X-X402-Recipient"),
-                    "txHash": _get("X-X402-Tx-Hash"),
-                    "expiry": int(_get("X-X402-Expiry")),
-                    "priceHash": _get("X-X402-Price-Hash"),
-                }
-                rebuilt, _, _ = build_canonical_aad(envelope["ns"], hx)
-                if not hmac.compare_digest(rebuilt, aad_bytes):
-                    raise AadMismatch("AAD_MISMATCH")
             sk = jwk_to_private_bytes(recipient_private_jwk)
             eph_pub = _b64u_to_bytes(envelope["enc"]) 
             if eph_pub == b"\x00" * 32 or all(b == 0 for b in eph_pub):
@@ -189,6 +167,38 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 raise InvalidEnvelope("INVALID_ENVELOPE")
             x402 = json.loads(segs[2])
             app = json.loads(segs[3]) if segs[3] else None
+            # Verify sidecar payment/extension headers
+            if sidecar is not None:
+                def _find(hname: str) -> Optional[str]:
+                    for k, v in sidecar.items():
+                        if isinstance(k, str) and k.lower() == hname.lower():
+                            return v.strip() if isinstance(v, str) else v
+                    return None
+                xp = _find("X-PAYMENT")
+                xpr = _find("X-PAYMENT-RESPONSE")
+                if xp and x402.get("header") == "X-Payment":
+                    expect = synthesize_payment_header_value(x402.get("payload", {}))
+                    if xp != expect:
+                        raise AadMismatch("AAD_MISMATCH")
+                if xpr and x402.get("header") == "X-Payment-Response":
+                    expect = synthesize_payment_header_value(x402.get("payload", {}))
+                    if xpr != expect:
+                        raise AadMismatch("AAD_MISMATCH")
+                # extensions
+                for k, v in (sidecar or {}).items():
+                    if not isinstance(k, str) or not is_approved_extension_header(k):
+                        continue
+                    ext_list = (app or {}).get("extensions") or []
+                    found = None
+                    for e in ext_list:
+                        if str(e.get("header", "")).lower() == k.lower():
+                            found = e
+                            break
+                    if not found:
+                        raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
+                    expect = synthesize_payment_header_value(found.get("payload", {}))
+                    if (v or "").strip() != expect:
+                        raise AadMismatch("AAD_MISMATCH")
             return pt, x402, app
 
     return _HPKE()

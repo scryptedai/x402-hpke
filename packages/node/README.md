@@ -18,7 +18,22 @@ npm install @x402-hpke/node@next
 ```ts
 import { createHpke, generateKeyPair, buildX402Headers } from "@x402-hpke/node";
 
-const hpke = createHpke({ namespace: "myapp" });
+// Optionally provide first-class X-PAYMENT or X-PAYMENT-RESPONSE at construction time.
+// They will be bound into AAD by default and only revealed if requested at seal time.
+const payment = {
+  x402Version: 1,
+  scheme: "exact",
+  network: "base-sepolia",
+  payload: {
+    signature: "0x...",
+    authorization: {
+      from: "0x...", to: "0x...", value: "10000",
+      validAfter: "1740672089", validBefore: "1740672154", nonce: "0x...",
+    },
+  },
+};
+
+const hpke = createHpke({ namespace: "myapp", x402: payment });
 const { publicJwk, privateJwk } = await generateKeyPair();
 
 const x402 = {
@@ -37,7 +52,7 @@ const { envelope, publicHeaders } = await hpke.seal({
   recipientPublicJwk: publicJwk,
   plaintext: new TextEncoder().encode("hello"),
   x402,
-  public: { x402Headers: true },
+  public: { x402Headers: true, revealPayment: true }, // reveals X-PAYMENT or X-PAYMENT-RESPONSE
 });
 
 const opened = await hpke.open({
