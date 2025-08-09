@@ -62,18 +62,28 @@ poetry run ci
 ```ts
 import { createHpke, generateKeyPair } from "@x402-hpke/node";
 
-const hpke = createHpke({ namespace: "myapp" });
+const hpke = createHpke({ 
+  namespace: "myapp",
+  // Optional: set defaults for all operations
+  x402: { header: "X-Payment", payload: { invoiceId: "default" } },
+  app: { traceId: "default" },
+  publicEntities: "all" // or ["X-PAYMENT", "X-402-Routing"] for specific headers
+});
+
 const { publicJwk, privateJwk } = await generateKeyPair();
 
 const x402 = {
-  invoiceId: "inv_1",
-  chainId: 8453,
-  tokenContract: "0x" + "a".repeat(40),
-  amount: "1000",
-  recipient: "0x" + "b".repeat(40),
-  txHash: "0x" + "c".repeat(64),
-  expiry: 9999999999,
-  priceHash: "0x" + "d".repeat(64),
+  header: "X-Payment",
+  payload: {
+    invoiceId: "inv_1",
+    chainId: 8453,
+    tokenContract: "0x" + "a".repeat(40),
+    amount: "1000",
+    recipient: "0x" + "b".repeat(40),
+    txHash: "0x" + "c".repeat(64),
+    expiry: 9999999999,
+    priceHash: "0x" + "d".repeat(64),
+  }
 };
 
 const payload = new TextEncoder().encode("hello");
@@ -82,10 +92,21 @@ const { envelope, publicHeaders } = await hpke.seal({
   recipientPublicJwk: publicJwk,
   plaintext: payload,
   x402,
-  public: { x402Headers: true, appHeaderAllowlist: ["traceId"], as: "headers" },
+  app: { traceId: "req_123" },
+  public: { 
+    makeEntitiesPublic: "all", // or ["X-PAYMENT", "X-402-Routing"]
+    makeEntitiesPrivate: ["traceId"], // optionally hide specific entities
+    as: "headers" // or "json"
+  },
+  httpResponseCode: 200 // controls sidecar behavior (402 = no payment headers)
 });
 
-const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kid1", publicHeaders });
+const opened = await hpke.open({ 
+  recipientPrivateJwk: privateJwk, 
+  envelope, 
+  expectedKid: "kid1", 
+  publicHeaders 
+});
 ```
 
 ## Quickstart (Python)
@@ -94,46 +115,170 @@ const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expe
 from x402_hpke import create_hpke
 from x402_hpke.keys import generate_keypair
 
-hpke = create_hpke(namespace="myapp")
+hpke = create_hpke(
+    namespace="myapp",
+    # Optional: set defaults for all operations
+    x402={"header": "X-Payment", "payload": {"invoiceId": "default"}},
+    app={"traceId": "default"},
+    public_entities="all"  # or ["X-PAYMENT", "X-402-Routing"] for specific headers
+)
+
 PUB, PRIV = generate_keypair()
 
 x402 = {
-    "invoiceId": "inv_1",
-    "chainId": 8453,
-    "tokenContract": "0x" + "a"*40,
-    "amount": "1000",
-    "recipient": "0x" + "b"*40,
-    "txHash": "0x" + "c"*64,
-    "expiry": 9999999999,
-    "priceHash": "0x" + "d"*64,
+    "header": "X-Payment",
+    "payload": {
+        "invoiceId": "inv_1",
+        "chainId": 8453,
+        "tokenContract": "0x" + "a"*40,
+        "amount": "1000",
+        "recipient": "0x" + "b"*40,
+        "txHash": "0x" + "c"*64,
+        "expiry": 9999999999,
+        "priceHash": "0x" + "d"*64,
+    }
 }
 
 payload = b"hello"
 
-env, headers = hpke.seal(kid="kid1", recipient_public_jwk=PUB, plaintext=payload, x402=x402, public={"x402Headers": True})
-pt, x, app = hpke.open(recipient_private_jwk=PRIV, envelope=env, expected_kid="kid1", public_headers=headers)
+env, headers = hpke.seal(
+    kid="kid1", 
+    recipient_public_jwk=PUB, 
+    plaintext=payload, 
+    x402=x402, 
+    app={"traceId": "req_123"},
+    public={
+        "makeEntitiesPublic": "all",  # or ["X-PAYMENT", "X-402-Routing"]
+        "makeEntitiesPrivate": ["traceId"],  # optionally hide specific entities
+        "as": "headers"  # or "json"
+    },
+    http_response_code=200  # controls sidecar behavior (402 = no payment headers)
+)
+
+pt, x, app = hpke.open(
+    recipient_private_jwk=PRIV, 
+    envelope=env, 
+    expected_kid="kid1", 
+    public_headers=headers
+)
 ```
 
-## Transport sidecar (headers/JSON)
-- Default: no transport headers are emitted; all metadata (including X-PAYMENT / X-PAYMENT-RESPONSE) is bound inside AAD.
-- Optional: `public` in `seal()` can emit sidecars:
-  - `x402Headers: true` → emits `X-X402-*` informational headers (projection of AAD x402 fields)
-  - `revealPayment: true` → emits `X-PAYMENT` or `X-PAYMENT-RESPONSE` as base64-encoded canonical JSON, per spec
-  - `appHeaderAllowlist` → emits `X-<ns>-<Key>` for allowed app keys
-- Server must rebuild AAD from the sidecar and require byte-for-byte equality. Mismatch → `400 AAD_MISMATCH`.
+## Core x402 Object Structure
 
-Spec reference: see Coinbase x402 repo [coinbase/x402](https://github.com/coinbase/x402).
+The x402 core object must include:
+- `header`: "X-Payment" or "X-Payment-Response" (case-insensitive)
+- `payload`: a non-empty object containing payment details
 
-## JWKS utilities
+Example x402 object:
+```json
+{
+  "header": "X-Payment",
+  "payload": {
+    "x402Version": 1,
+    "scheme": "exact",
+    "network": "base-sepolia",
+    "payload": {
+      "signature": "0x2d6a7588d6acca505cbf0d9a4a227e0c52c6c34008c8e8986a1283259764173608a2ce6496642e377d6da8dbbf5836e9bd15092f9ecab05ded3d6293af148b571c",
+      "authorization": {
+        "from": "0x857b06519E91e3A54538791bDbb0E22373e36b66",
+        "to": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+        "value": "10000",
+        "validAfter": "1740672089",
+        "validBefore": "1740672154",
+        "nonce": "0xf3746613c2d920b5fdabc0856f2aeb2d4f88ee6037b8cc5d04a71a4462f13480"
+      }
+    }
+  }
+}
+```
+
+## Transport Sidecar (Headers/JSON)
+
+- **Default**: No transport headers are emitted; all metadata is bound inside AAD
+- **Optional**: Use `public` in `seal()` to emit sidecars:
+  - `makeEntitiesPublic: "all"` → emits all available entities (core payment + approved extensions)
+  - `makeEntitiesPublic: ["X-PAYMENT", "X-402-Routing"]` → emits specific entities
+  - `makeEntitiesPrivate: ["traceId"]` → subtracts entities from the public set
+  - `as: "headers"` (default) or `"json"` → controls sidecar format
+
+### HTTP Response Code Behavior
+
+- **402 responses**: Never emit X-PAYMENT headers in sidecar (only approved extensions)
+- **Other responses**: Can emit both payment headers and approved extensions
+- **Client requests**: Can emit X-PAYMENT headers for payment verification
+
+### Approved Extension Headers (v1)
+
+- `X-402-Routing` — service routing and priority
+- `X-402-Limits` — rate limiting and quotas  
+- `X-402-Acceptable` — content labels and jurisdiction info
+- `X-402-Metadata` — arbitrary key-value metadata
+
+Server must rebuild AAD from sidecar and require byte-for-byte equality. Mismatch → `400 AAD_MISMATCH`.
+
+## Constructor Defaults
+
+Set defaults at HPKE creation time for consistent behavior across all operations:
+
+```ts
+const hpke = createHpke({
+  namespace: "myapp",
+  x402: { header: "X-Payment", payload: { /* default payment */ } },
+  app: { traceId: "default", model: "gpt-4" },
+  publicEntities: "all" // or specific list
+});
+```
+
+These defaults are merged with per-call values, with per-call taking precedence.
+
+## JWKS Utilities
+
 - Node: `fetchJwks(url)`, `setJwks(url, jwks)`, `selectJwkFromJwks(jwks, kid)`
 - Python: `fetch_jwks(url)`, `set_jwks(url, jwks)`, `select_jwk(kid, jwks, url)`
 - HTTPS-only, basic caching using Cache-Control/Expires, and kid-based selection.
 
-## Streaming (optional)
-- Export a symmetric key from the HPKE context (design in `docs/STREAMING.md`) and use `XChaCha20-Poly1305` per-chunk with 24-byte nonce = `prefix(16) || le64(seq)`.
-- In v1, Node exports helpers: `sealChunkXChaCha`, `openChunkXChaCha` for chunk operations.
+## Streaming (XChaCha20-Poly1305)
+
+Export a symmetric key from the HPKE context and use XChaCha20-Poly1305 per-chunk:
+
+```ts
+// Node
+import { sealChunkXChaCha, openChunkXChaCha, XChaChaStreamLimiter } from "@x402-hpke/node";
+
+// Basic chunk operations
+const ct = await sealChunkXChaCha(key, prefix16, seq, chunk, aad?);
+const pt = await openChunkXChaCha(key, prefix16, seq, ct, aad?);
+
+// Limit-enforcing wrapper
+const limiter = new XChaChaStreamLimiter(key, prefix16, { 
+  maxChunks: 1000, 
+  maxBytes: 1000000 
+});
+const ct = await limiter.seal(seq, chunk, aad?);
+const pt = await limiter.open(seq, ct, aad?);
+```
+
+```python
+# Python
+from x402_hpke import seal_chunk_xchacha, open_chunk_xchacha, XChaChaStreamLimiter
+
+# Basic chunk operations
+ct = seal_chunk_xchacha(key, prefix16, seq, chunk, aad=None)
+pt = open_chunk_xchacha(key, prefix16, seq, ct, aad=None)
+
+# Limit-enforcing wrapper
+limiter = XChaChaStreamLimiter(key, prefix16, max_chunks=1000, max_bytes=1000000)
+ct = limiter.seal(seq, chunk, aad=None)
+pt = limiter.open(seq, ct, aad=None)
+```
+
+- Nonce: 24 bytes = `prefix(16) || le64(seq)`
+- Each chunk: `{ seq, ct }` with AEAD tag included
+- Reject out-of-order or duplicate seq
+- Enforce limits before large seq windows
 
 ## Examples
+
 - Express server: `examples/express-server/server.ts` (402 quote + fulfill)
 - FastAPI server: `examples/fastapi-server/app.py`
 - Clients: `examples/client-node`, `examples/client-python`
@@ -153,6 +298,7 @@ Notes for running examples:
   ```
 
 ## Tests
+
 - Node:
   ```bash
   cd packages/node
@@ -172,9 +318,11 @@ Notes for running examples:
    ```
 
 ## CI
+
 - See `.github/workflows/ci.yml`. Matrix for Node and Python. Interop test step can be added to run in CI.
 
 ## Spec & docs
+
 - `docs/SPEC.md` — spec highlights and updates
 - `docs/AAD.md` — canonicalization rules
 - `docs/JWKS.md` — key publishing rotation and caching
@@ -183,6 +331,5 @@ Notes for running examples:
  - `docs/THREAT_MODEL.md` — goals, non-goals, attacker model, mitigations, replay guidance
 
 ## Acknowledgements
-```
-This code library was developed with the assistance of large language models (LLMs), which served as interactive tools to accelerate the engineering workflow. Their specific contributions included conceptualization, code generation, debugging, and documentation. The primary models consulted were OpenAI’s ChatGPT and Anthropic’s Claude. While these tools were integral to the development process, the architecture decisions, implementation oversight, and all final conclusions are the sole work of the human author.
-```
+
+This code library was developed with the assistance of large language models (LLMs), which served as interactive tools to accelerate the engineering workflow. Their specific contributions included conceptualization, code generation, debugging, and documentation. The primary models consulted were OpenAI's ChatGPT and Anthropic's Claude. While these tools were integral to the development process, the architecture decisions, implementation oversight, and all final conclusions are the sole work of the human author.

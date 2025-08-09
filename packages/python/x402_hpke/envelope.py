@@ -41,7 +41,7 @@ def _hkdf_sha256(ikm: bytes, info: bytes, length: int) -> bytes:
     return okm[:length]
 
 
-def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", aead: str = "CHACHA20-POLY1305", jwks_url: Optional[str] = None, x402: Optional[Dict] = None, app: Optional[Dict] = None):
+def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", aead: str = "CHACHA20-POLY1305", jwks_url: Optional[str] = None, x402: Optional[Dict] = None, app: Optional[Dict] = None, public_entities: Optional[object] = None):
     if not namespace or namespace.lower() == "x402":
         raise NsForbidden("NS_FORBIDDEN")
 
@@ -50,7 +50,8 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
         version = "v1"
         _default_x402 = x402
         _default_app = dict(app) if isinstance(app, dict) else None
-        def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
+        _default_public = public_entities
+        def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None, http_response_code: Optional[int] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
             # Merge constructor app defaults with per-call app (per-call wins)
@@ -61,7 +62,7 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 merged_app.update(app)
             eff_app = merged_app if len(merged_app.keys()) > 0 else None
             # Use per-call x402 or constructor default
-            eff_x402 = x402 or self._default_x402
+            eff_x402 = x402 if x402 is not None else self._default_x402
             if eff_x402 is None:
                 raise ValueError("X402_REQUIRED")
             aad_bytes, xnorm, _ = build_canonical_aad(namespace, eff_x402, eff_app)
@@ -105,9 +106,86 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 "aad": _b64u(aad_bytes),
                 "ct": _b64u(ct),
             }
+            # Inject constructor defaults for public entities if not provided
+            if public is None:
+                public = {}
+            if self._default_public is not None and public.get("makeEntitiesPublic") is None:
+                public["makeEntitiesPublic"] = self._default_public
             as_kind = (public or {}).get("as", "headers")
-            reveal_payment = bool((public or {}).get("revealPayment", False))
-            ext_allow = (public or {}).get("extensionsAllowlist", []) or []
+            
+            # Three use cases for sidecar generation:
+            # 1. Client request (no http_response_code): Can include X-PAYMENT in sidecar
+            # 2. 402 response: No X-402 headers sent (but body is encrypted)
+            # 3. Success response (200+): Can include X-PAYMENT-RESPONSE in sidecar
+            
+            # For 402 responses, never send X-402 headers in sidecar
+            if http_response_code == 402:
+                # Only emit approved extensions if explicitly requested
+                make_pub_in = (public or {}).get("makeEntitiesPublic")
+                ext_allow: list[str] = []
+                if isinstance(make_pub_in, str) and make_pub_in.lower() in ("all", "*"):
+                    if app and isinstance(app.get("extensions"), list):
+                        ext_allow = [str(e.get("header")) for e in app["extensions"] if is_approved_extension_header(str(e.get("header")))]
+                elif isinstance(make_pub_in, list):
+                    # For 402, only process approved extension headers, ignore core payment headers
+                    ext_allow = [x for x in make_pub_in if is_approved_extension_header(x)]
+                
+                # Apply makeEntitiesPrivate filter
+                make_priv = (public or {}).get("makeEntitiesPrivate")
+                if isinstance(make_priv, list) and len(ext_allow) > 0:
+                    privset = set(x.upper() for x in make_priv)
+                    ext_allow = [h for h in ext_allow if h.upper() not in privset]
+                
+                # 402 responses only emit extensions, never core payment headers
+                if len(ext_allow) == 0:
+                    return envelope, None
+                
+                if as_kind == "headers":
+                    hdrs: Dict[str, str] = {}
+                    if ext_allow and app and isinstance(app.get("extensions"), list):
+                        for wanted in ext_allow:
+                            if not is_approved_extension_header(wanted):
+                                continue
+                            found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                            if not found:
+                                raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
+                            hdrs[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
+                    return envelope, hdrs
+                else:
+                    j: Dict[str, str] = {}
+                    if ext_allow and app and isinstance(app.get("extensions"), list):
+                        for wanted in ext_allow:
+                            if not is_approved_extension_header(wanted):
+                                continue
+                            found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                            if not found:
+                                raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
+                            j[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
+                    return envelope, j
+            
+            # For non-402 responses (including client requests), handle normal sidecar logic
+            # Determine entities to emit via makeEntitiesPublic
+            make_pub_in = (public or {}).get("makeEntitiesPublic")
+            reveal_payment = False
+            ext_allow: list[str] = []
+            if isinstance(make_pub_in, str) and make_pub_in.lower() in ("all", "*"):
+                reveal_payment = True
+                if app and isinstance(app.get("extensions"), list):
+                    ext_allow = [str(e.get("header")) for e in app["extensions"] if is_approved_extension_header(str(e.get("header")))]
+            elif isinstance(make_pub_in, list):
+                lst = [str(x) for x in make_pub_in]
+                reveal_payment = any(x.upper() in ("X-PAYMENT", "X-PAYMENT-RESPONSE") for x in lst)
+                ext_allow = [x for x in lst if is_approved_extension_header(x)]
+            # Apply makeEntitiesPrivate subtraction
+            make_priv = (public or {}).get("makeEntitiesPrivate")
+            if isinstance(make_priv, list) and len(ext_allow) > 0:
+                privset = set(x.upper() for x in make_priv)
+                ext_allow = [h for h in ext_allow if h.upper() not in privset]
+                if reveal_payment:
+                    if "X-PAYMENT" in privset and str(xnorm.get("header")) == "X-Payment":
+                        reveal_payment = False
+                    if "X-PAYMENT-RESPONSE" in privset and str(xnorm.get("header")) == "X-Payment-Response":
+                        reveal_payment = False
             if not reveal_payment and len(ext_allow) == 0:
                 return envelope, None
             if as_kind == "headers":

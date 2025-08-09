@@ -10,6 +10,8 @@ export type CreateHpkeOptions = {
   x402: any;
   // Optional application object (may include { extensions: [...] })
   app?: Record<string, any>;
+  // Optional default list of entities to expose publicly on seal (overridable per call)
+  publicEntities?: "all" | "*" | string[];
   // Other params
   namespace: string; // not "x402"
   kem?: Algorithms["kem"];
@@ -44,6 +46,7 @@ export function createHpke(opts: CreateHpkeOptions) {
   }
   // Default app from constructor
   const defaultApp: Record<string, any> | undefined = opts.app ? { ...opts.app } : undefined;
+  const defaultMakePublic = opts.publicEntities;
   return {
     namespace: ns,
     kem,
@@ -56,7 +59,9 @@ export function createHpke(opts: CreateHpkeOptions) {
       const mergedApp = { ...(defaultApp ?? {}), ...(args.app ?? {}) };
       // Default x402 from constructor if not provided per call
       const core = (args as any).x402 ?? opts.x402;
-      return seal({ ...args, x402: core, app: Object.keys(mergedApp).length ? mergedApp : undefined, namespace: ns, kem, kdf, aead });
+      const mergedPublic = { ...(args.public ?? {}) } as any;
+      if (mergedPublic.makeEntitiesPublic === undefined && defaultMakePublic !== undefined) mergedPublic.makeEntitiesPublic = defaultMakePublic as any;
+      return seal({ ...args, public: Object.keys(mergedPublic).length ? mergedPublic : undefined, x402: core, app: Object.keys(mergedApp).length ? mergedApp : undefined, namespace: ns, kem, kdf, aead });
     },
     open: (args: Parameters<typeof open>[0]) => open({ ...args, namespace: ns, kem, kdf, aead }),
     canonicalAad: (x402: any, app?: any) => canonicalAad(ns, x402, app),

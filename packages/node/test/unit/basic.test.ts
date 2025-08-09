@@ -19,7 +19,7 @@ await test("payment sidecar AAD equivalence", async () => {
   const hpke = createHpke({ namespace: "myapp", x402: { header: "X-Payment", payload: { invoiceId: "inv_2" } } });
   const { publicJwk, privateJwk } = await generateKeyPair();
   const payload = new TextEncoder().encode("bye");
-  const { envelope, publicHeaders } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402: { header: "X-Payment", payload: { invoiceId: "inv_2" } }, public: { revealPayment: true, as: "headers" } });
+  const { envelope, publicHeaders } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402: { header: "X-Payment", payload: { invoiceId: "inv_2" } }, public: { makeEntitiesPublic: ["X-PAYMENT"], as: "headers" } });
   assert.ok(publicHeaders);
   const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kid1", publicHeaders });
   assert.equal(new TextDecoder().decode(opened.plaintext), "bye");
@@ -143,6 +143,56 @@ await test("KAT: negative vectors (streaming)", async () => {
       await assert.rejects(() => limiter.seal(1, new TextEncoder().encode("ch2")), /AEAD_LIMIT/);
     }
   }
+});
+
+await test("three use cases for sidecar generation", async () => {
+  const hpke = createHpke({ namespace: "myapp", x402: { header: "X-Payment", payload: { invoiceId: "inv_1" } } });
+  const { publicJwk, privateJwk } = await generateKeyPair();
+  const payload = new TextEncoder().encode("test data");
+
+  // Case 1: Client request (no httpResponseCode) - can include X-PAYMENT in sidecar
+  const { envelope: clientEnvelope, publicHeaders: clientHeaders } = await hpke.seal({
+    kid: "kid1",
+    recipientPublicJwk: publicJwk,
+    plaintext: payload,
+    x402: { header: "X-Payment", payload: { invoiceId: "inv_1" } },
+    public: { makeEntitiesPublic: ["X-PAYMENT"], as: "headers" }
+  });
+  assert.ok(clientHeaders);
+  assert.ok(clientHeaders["X-PAYMENT"]);
+  
+  // Case 2: 402 response - no X-402 headers in sidecar (but body is encrypted)
+  const { envelope: response402Envelope, publicHeaders: response402Headers } = await hpke.seal({
+    kid: "kid1",
+    recipientPublicJwk: publicJwk,
+    plaintext: payload,
+    x402: { header: "X-Payment", payload: { invoiceId: "inv_1" } },
+    httpResponseCode: 402,
+    public: { makeEntitiesPublic: ["X-PAYMENT"], as: "headers" } // This should be ignored for 402
+  });
+  assert.ok(response402Envelope);
+  assert.strictEqual(response402Headers, undefined); // 402 responses don't send X-402 headers
+  
+  // Case 3: Success response (200) - can include X-PAYMENT-RESPONSE in sidecar
+  const { envelope: successEnvelope, publicHeaders: successHeaders } = await hpke.seal({
+    kid: "kid1",
+    recipientPublicJwk: publicJwk,
+    plaintext: payload,
+    x402: { header: "X-Payment-Response", payload: { settlementId: "settle_1" } },
+    httpResponseCode: 200,
+    public: { makeEntitiesPublic: ["X-PAYMENT-RESPONSE"], as: "headers" }
+  });
+  assert.ok(successHeaders);
+  assert.ok(successHeaders["X-PAYMENT-RESPONSE"]);
+  
+  // Verify all envelopes can be opened
+  const openedClient = await hpke.open({ recipientPrivateJwk: privateJwk, envelope: clientEnvelope, publicHeaders: clientHeaders });
+  const opened402 = await hpke.open({ recipientPrivateJwk: privateJwk, envelope: response402Envelope });
+  const openedSuccess = await hpke.open({ recipientPrivateJwk: privateJwk, envelope: successEnvelope, publicHeaders: successHeaders });
+  
+  assert.equal(new TextDecoder().decode(openedClient.plaintext), "test data");
+  assert.equal(new TextDecoder().decode(opened402.plaintext), "test data");
+  assert.equal(new TextDecoder().decode(openedSuccess.plaintext), "test data");
 });
 
 // reply-to no longer required; test removed

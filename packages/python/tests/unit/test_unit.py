@@ -68,8 +68,8 @@ def test_kats_if_present():
         }
         if vector.get("app"):
             kwargs["app"] = vector["app"]
-        if vector.get("allowlist") or vector.get("sidecar_as"):
-            kwargs["public"] = {"revealPayment": True, "as": vector.get("sidecar_as", "headers")}
+    if vector.get("allowlist") or vector.get("sidecar_as"):
+        kwargs["public"] = {"makeEntitiesPublic": ["X-PAYMENT"], "as": vector.get("sidecar_as", "headers")}
         env, sidecar = hpke.seal(**kwargs)
         if sidecar:
             pt2, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env, expected_kid=vector["kid"], public_headers=sidecar if isinstance(sidecar, dict) else None, public_json=sidecar if isinstance(sidecar, dict) else None)
@@ -117,8 +117,8 @@ def test_negative_kats_if_present():
         }
         if v.get("app"):
             kwargs["app"] = v["app"]
-        if v.get("allowlist"):
-            kwargs["public"] = {"revealPayment": True, "as": "headers"}
+    if v.get("allowlist"):
+        kwargs["public"] = {"makeEntitiesPublic": ["X-PAYMENT"], "as": "headers"}
         try:
             create_hpke(namespace=v["ns"]).seal(**kwargs)
             assert False
@@ -141,6 +141,59 @@ def test_payment_sidecar_roundtrip():
     hpke = create_hpke(namespace="myapp")
     from x402_hpke.keys import generate_keypair
     pub, priv = generate_keypair()
-    env, sidecar = hpke.seal(kid="kid1", recipient_public_jwk=pub, plaintext=b"ok", x402={"header": "X-Payment", "payload": {"invoiceId": "inv"}}, public={"revealPayment": True, "as": "headers"})
+    env, sidecar = hpke.seal(kid="kid1", recipient_public_jwk=pub, plaintext=b"ok", x402={"header": "X-Payment", "payload": {"invoiceId": "inv"}}, public={"makeEntitiesPublic": ["X-PAYMENT"], "as": "headers"})
     pt, x, _ = hpke.open(recipient_private_jwk=priv, envelope=env, expected_kid="kid1", public_headers=sidecar)
     assert pt == b"ok"
+
+
+def test_three_use_cases_for_sidecar_generation():
+    hpke = create_hpke(namespace="myapp")
+    from x402_hpke.keys import generate_keypair
+    pub, priv = generate_keypair()
+    x402 = {"header": "X-Payment", "payload": {"invoiceId": "inv_1"}}
+    payload = b"test data"
+
+    # Case 1: Client request (no http_response_code) - can include X-PAYMENT in sidecar
+    env, sidecar = hpke.seal(
+        kid="kid1",
+        recipient_public_jwk=pub,
+        plaintext=payload,
+        x402=x402,
+        public={"makeEntitiesPublic": ["X-PAYMENT"], "as": "headers"}
+    )
+    assert sidecar is not None
+    assert "X-PAYMENT" in sidecar
+    
+    # Case 2: 402 response - no X-402 headers in sidecar (but body is encrypted)
+    env_402, sidecar_402 = hpke.seal(
+        kid="kid1",
+        recipient_public_jwk=pub,
+        plaintext=payload,
+        x402=x402,
+        http_response_code=402,
+        public={"makeEntitiesPublic": ["X-PAYMENT"], "as": "headers"}  # This should be ignored for 402
+    )
+    assert env_402 is not None
+    assert sidecar_402 is None  # 402 responses don't send X-402 headers
+    
+    # Case 3: Success response (200) - can include X-PAYMENT-RESPONSE in sidecar
+    x402_response = {"header": "X-Payment-Response", "payload": {"settlementId": "settle_1"}}
+    env_success, sidecar_success = hpke.seal(
+        kid="kid1",
+        recipient_public_jwk=pub,
+        plaintext=payload,
+        x402=x402_response,
+        http_response_code=200,
+        public={"makeEntitiesPublic": ["X-PAYMENT-RESPONSE"], "as": "headers"}
+    )
+    assert sidecar_success is not None
+    assert "X-PAYMENT-RESPONSE" in sidecar_success
+    
+    # Verify all envelopes can be opened
+    pt_client, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env, public_headers=sidecar)
+    pt_402, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env_402)
+    pt_success, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env_success, public_headers=sidecar_success)
+    
+    assert pt_client == payload
+    assert pt_402 == payload
+    assert pt_success == payload
