@@ -7,8 +7,8 @@ license = "MIT"
 readme = "README.md"
 packages = [{ include = "x402_hpke" }]
 homepage = "https://scrypted.ai"
-repository = "https://github.com/<org>/<repo>"
-documentation = "https://github.com/<org>/<repo>/tree/main/docs"
+repository = "https://github.com/scryptedai/x402-hpke"
+documentation = "https://github.com/scryptedai/x402-hpke/tree/main/docs"
 keywords = ["hpke", "aead", "x25519", "jwks", "envelope"]
 classifiers = [
   "Programming Language :: Python :: 3",

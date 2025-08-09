@@ -1,5 +1,7 @@
 # @x402-hpke/node
 
+Monorepo: https://github.com/scryptedai/x402-hpke (Node path: `packages/node`, Python path: `packages/python`).
+
 Provider-agnostic HPKE envelope library for x402 (Node, ESM). Pinned ciphersuite for interop:
 X25519 / HKDF-SHA256 / ChaCha20-Poly1305 (envelope); streaming helpers use XChaCha20-Poly1305.
 

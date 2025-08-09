@@ -1,5 +1,8 @@
 # Technical Design — x402-hpke (Hybrid Public Key Encryption, HPKE; pinned for interop)
 
+- Repository: https://github.com/scryptedai/x402-hpke
+- Monorepo paths: Node (TypeScript) at `packages/node`, Python at `packages/python`.
+
 - Ciphersuite (v1, pinned for maximum interop):
   - KEM (Key Encapsulation Mechanism): X25519
   - KDF (Key Derivation Function): HKDF-SHA256

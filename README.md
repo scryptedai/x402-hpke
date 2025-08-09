@@ -2,6 +2,10 @@
 
 Provider-agnostic HPKE envelope library for x402 — Node (TypeScript) and Python (Poetry). Canonical AAD with x402 fields, optional public sidecar (headers/JSON) for legacy middleware, and deterministic interop.
 
+- Repository: `https://github.com/scryptedai/x402-hpke`
+- Monorepo layout:
+  - Node (TypeScript): `packages/node`
+  - Python (Poetry): `packages/python`
 - Packages:
   - Node: `@x402-hpke/node`
   - Python: `x402-hpke`
