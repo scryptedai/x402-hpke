@@ -84,16 +84,42 @@ def test_kats_if_present():
         kat = json.load(f)
     for vector in kat.get("vectors", []):
         hpke = create_hpke(namespace=vector["ns"]) 
-        # Since Python currently doesn't expose eph seed in API, we just open Node-produced envelope if present
-        if "envelope" in vector:
-            env = vector["envelope"]
-            # ensure expected kid opens
-            from x402_hpke.keys import generate_keypair
-            pub, priv = generate_keypair()
-            pt_expected = base64.urlsafe_b64decode(vector["plaintext_b64u"] + "==")
-            # Re-seal path is skipped; we validate open path via roundtrip in other tests
-            # Here: decode aad and ensure base64url formatting is correct
-            base64.urlsafe_b64decode(env["aad"] + "==")
-            # Build a minimal envelope by copying vector but with our pub key will not decrypt; skip decryption
-            # KATs are primarily consumed by Node test for sealing determinism
-            assert isinstance(env["aad"], str) and isinstance(env["enc"], str)
+        from x402_hpke.keys import generate_keypair
+        pub, priv = generate_keypair()
+        pt = base64.urlsafe_b64decode(vector["plaintext_b64u"] + "==")
+        kwargs = {
+            "kid": vector["kid"],
+            "recipient_public_jwk": pub,
+            "plaintext": pt,
+            "x402": vector["x402"],
+        }
+        if vector.get("app"):
+            kwargs["app"] = vector["app"]
+        if vector.get("allowlist") or vector.get("sidecar_as"):
+            kwargs["public"] = {"x402Headers": True, "appHeaderAllowlist": vector.get("allowlist", []), "as": vector.get("sidecar_as", "headers")}
+        env, sidecar = hpke.seal(**kwargs)
+        if sidecar:
+            pt2, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env, expected_kid=vector["kid"], public_headers=sidecar if isinstance(sidecar, dict) else None, public_json=sidecar if isinstance(sidecar, dict) else None)
+            assert pt2 == pt
+        else:
+            pt2, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env, expected_kid=vector["kid"])
+            assert pt2 == pt
+
+
+def test_streaming_kats_if_present():
+    kat_path = os.path.join(os.getcwd(), "docs", "KATs", "kat_stream_v1.json")
+    if not os.path.exists(kat_path):
+        return
+    from x402_hpke import seal_chunk_xchacha, open_chunk_xchacha
+    with open(kat_path, "r", encoding="utf-8") as f:
+        kat = json.load(f)
+    for v in kat.get("vectors", []):
+        key = base64.urlsafe_b64decode(v["key_b64u"] + "==")
+        prefix = base64.urlsafe_b64decode(v["prefix16_b64u"] + "==")
+        aad = base64.urlsafe_b64decode(v["aad_b64u"] + "==") if v.get("aad_b64u") else None
+        plains = [base64.urlsafe_b64decode(b64 + "==") for b64 in v["chunks_b64u"]]
+        seq = int(v.get("start_seq", 0))
+        cts = [seal_chunk_xchacha(key, prefix, seq + i, chunk, aad) for i, chunk in enumerate(plains)]
+        for i, ct in enumerate(cts):
+            pt = open_chunk_xchacha(key, prefix, seq + i, ct, aad)
+            assert pt == plains[i]

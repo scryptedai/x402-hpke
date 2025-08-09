@@ -1,4 +1,5 @@
 import { TextEncoder } from "node:util";
+import { NsForbiddenError, NsCollisionError } from "./errors.js";
 
 export type X402Fields = {
   invoiceId: string;
@@ -57,11 +58,11 @@ export function buildCanonicalAad(namespace: string, x402: X402Fields, app?: Rec
   x402Normalized: X402Fields;
   appNormalized?: Record<string, any>;
 } {
-  if (!namespace || namespace.toLowerCase() === "x402") throw new Error("NS_FORBIDDEN");
+  if (!namespace || namespace.toLowerCase() === "x402") throw new NsForbiddenError("NS_FORBIDDEN");
   const x = validateX402(x402);
   if (app) {
     for (const k of Object.keys(app)) {
-      if (k === "x402" || k.startsWith("x402") || k in x) throw new Error("NS_COLLISION");
+      if (k === "x402" || k.startsWith("x402") || k in x) throw new NsCollisionError("NS_COLLISION");
     }
   }
   const xJson = canonicalJson(x);

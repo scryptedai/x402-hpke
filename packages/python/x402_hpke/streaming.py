@@ -1,11 +1,17 @@
 from __future__ import annotations
 from typing import Optional
+from .errors import (
+    SeqNegative,
+    StreamKeyLen,
+    StreamNoncePrefixLen,
+    AeadLimit,
+)
 from nacl import bindings
 
 
 def _le64(n: int) -> bytes:
     if n < 0:
-        raise ValueError("SEQ_NEGATIVE")
+        raise SeqNegative("SEQ_NEGATIVE")
     b = bytearray(8)
     x = n
     for i in range(8):
@@ -16,18 +22,18 @@ def _le64(n: int) -> bytes:
 
 def seal_chunk_xchacha(key: bytes, nonce_prefix16: bytes, seq: int, chunk: bytes, aad: Optional[bytes] = None) -> bytes:
     if len(key) != 32:
-        raise ValueError("STREAM_KEY_LEN")
+        raise StreamKeyLen("STREAM_KEY_LEN")
     if len(nonce_prefix16) != 16:
-        raise ValueError("STREAM_NONCE_PREFIX_LEN")
+        raise StreamNoncePrefixLen("STREAM_NONCE_PREFIX_LEN")
     nonce = nonce_prefix16 + _le64(seq)
     return bindings.crypto_aead_xchacha20poly1305_ietf_encrypt(chunk, aad, nonce, key)
 
 
 def open_chunk_xchacha(key: bytes, nonce_prefix16: bytes, seq: int, ciphertext: bytes, aad: Optional[bytes] = None) -> bytes:
     if len(key) != 32:
-        raise ValueError("STREAM_KEY_LEN")
+        raise StreamKeyLen("STREAM_KEY_LEN")
     if len(nonce_prefix16) != 16:
-        raise ValueError("STREAM_NONCE_PREFIX_LEN")
+        raise StreamNoncePrefixLen("STREAM_NONCE_PREFIX_LEN")
     nonce = nonce_prefix16 + _le64(seq)
     return bindings.crypto_aead_xchacha20poly1305_ietf_decrypt(ciphertext, aad, nonce, key)
 
@@ -46,9 +52,9 @@ class XChaChaStreamLimiter:
 
     def _enforce(self, next_bytes: int) -> None:
         if self._chunks_used + 1 > self._max_chunks:
-            raise ValueError("AEAD_LIMIT")
+            raise AeadLimit("AEAD_LIMIT")
         if self._bytes_used + next_bytes > self._max_bytes:
-            raise ValueError("AEAD_LIMIT")
+            raise AeadLimit("AEAD_LIMIT")
 
     def seal(self, seq: int, chunk: bytes, aad: Optional[bytes] = None) -> bytes:
         self._enforce(len(chunk))

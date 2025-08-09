@@ -21,6 +21,7 @@ export { canonicalAad, buildCanonicalAad, validateX402 } from "./aad.js";
 export { generateKeyPair, selectJwkFromJwks } from "./keys.js";
 export { buildX402Headers } from "./headers.js";
 export { sealChunkXChaCha, openChunkXChaCha } from "./streaming.js";
+export * as X402Errors from "./errors.js";
 
 export const X402_HPKE_VERSION = "v1" as const;
 export const X402_HPKE_SUITE = "X25519-HKDF-SHA256-CHACHA20POLY1305" as const;

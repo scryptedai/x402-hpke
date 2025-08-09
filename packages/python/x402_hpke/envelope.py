@@ -1,6 +1,16 @@
 from __future__ import annotations
 from typing import Dict, Optional, Tuple
 from .aad import build_canonical_aad
+from .errors import (
+    NsForbidden,
+    AeadUnsupported,
+    EcdhLowOrder,
+    PublicKeyNotInAad,
+    InvalidEnvelope,
+    AeadMismatch,
+    KidMismatch,
+    AadMismatch,
+)
 from .keys import jwk_to_public_bytes, jwk_to_private_bytes
 from .headers import build_x402_headers
 from nacl import bindings
@@ -32,14 +42,14 @@ def _hkdf_sha256(ikm: bytes, info: bytes, length: int) -> bytes:
 
 def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", aead: str = "CHACHA20-POLY1305", jwks_url: Optional[str] = None):
     if not namespace or namespace.lower() == "x402":
-        raise ValueError("NS_FORBIDDEN")
+        raise NsForbidden("NS_FORBIDDEN")
 
     class _HPKE:
         suite = "X25519-HKDF-SHA256-CHACHA20POLY1305"
         version = "v1"
         def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
             if aead != "CHACHA20-POLY1305":
-                raise ValueError("AEAD_UNSUPPORTED")
+                raise AeadUnsupported("AEAD_UNSUPPORTED")
             aad_bytes, xnorm, _ = build_canonical_aad(namespace, x402, app)
             eph_skpk = (
                 bindings.crypto_kx_seed_keypair(__test_eph_seed32)
@@ -49,10 +59,10 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
             eph_pub, eph_priv = eph_skpk
             recipient_pub = jwk_to_public_bytes(recipient_public_jwk)
             if recipient_pub == b"\x00" * 32 or all(b == 0 for b in recipient_pub):
-                raise ValueError("ECDH_LOW_ORDER")
+                raise EcdhLowOrder("ECDH_LOW_ORDER")
             shared = bindings.crypto_scalarmult(eph_priv, recipient_pub)
             if shared == b"\x00" * 32 or all(b == 0 for b in shared):
-                raise ValueError("ECDH_LOW_ORDER")
+                raise EcdhLowOrder("ECDH_LOW_ORDER")
             # HKDF info binds label, suite, namespace, enc, and recipient public key
             info = (
                 "x402-hpke:v1|KDF="
@@ -93,7 +103,7 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 if app_allow and app:
                     for k in app_allow:
                         if k not in app:
-                            raise ValueError("PUBLIC_KEY_NOT_IN_AAD")
+                            raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
                         hdrs[f"X-{namespace}-{k}"] = str(app[k])
                 return envelope, hdrs
             else:
@@ -103,19 +113,19 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 if app_allow and app:
                     for k in app_allow:
                         if k not in app:
-                            raise ValueError("PUBLIC_KEY_NOT_IN_AAD")
+                            raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
                         j[f"X-{namespace}-{k}"] = str(app[k])
                 return envelope, j
 
         def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None) -> Tuple[bytes, Dict, Optional[Dict]]:
             if envelope.get("ver") != "1" or envelope.get("ns", "").lower() == "x402":
-                raise ValueError("INVALID_ENVELOPE")
+                raise InvalidEnvelope("INVALID_ENVELOPE")
             if envelope.get("aead") != aead:
-                raise ValueError("AEAD_MISMATCH")
+                raise AeadMismatch("AEAD_MISMATCH")
             if aead != "CHACHA20-POLY1305":
-                raise ValueError("AEAD_UNSUPPORTED")
+                raise AeadUnsupported("AEAD_UNSUPPORTED")
             if expected_kid and envelope.get("kid") != expected_kid:
-                raise ValueError("KID_MISMATCH")
+                raise KidMismatch("KID_MISMATCH")
             aad_bytes = _b64u_to_bytes(envelope["aad"]) 
             sidecar = public_headers or public_json
             if sidecar is not None:
@@ -136,14 +146,14 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                 }
                 rebuilt, _, _ = build_canonical_aad(envelope["ns"], hx)
                 if not hmac.compare_digest(rebuilt, aad_bytes):
-                    raise ValueError("AAD_MISMATCH")
+                    raise AadMismatch("AAD_MISMATCH")
             sk = jwk_to_private_bytes(recipient_private_jwk)
             eph_pub = _b64u_to_bytes(envelope["enc"]) 
             if eph_pub == b"\x00" * 32 or all(b == 0 for b in eph_pub):
-                raise ValueError("ECDH_LOW_ORDER")
+                raise EcdhLowOrder("ECDH_LOW_ORDER")
             shared = bindings.crypto_scalarmult(sk, eph_pub)
             if shared == b"\x00" * 32 or all(b == 0 for b in shared):
-                raise ValueError("ECDH_LOW_ORDER")
+                raise EcdhLowOrder("ECDH_LOW_ORDER")
             pkR = bindings.crypto_scalarmult_base(sk)
             info = (
                 "x402-hpke:v1|KDF="
@@ -164,7 +174,7 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
             aad_str = _b64u_to_bytes(envelope["aad"]).decode("utf-8")
             segs = aad_str.split("|")
             if len(segs) < 4:
-                raise ValueError("INVALID_ENVELOPE")
+                raise InvalidEnvelope("INVALID_ENVELOPE")
             x402 = json.loads(segs[2])
             app = json.loads(segs[3]) if segs[3] else None
             return pt, x402, app

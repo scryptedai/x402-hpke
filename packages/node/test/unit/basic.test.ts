@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHpke, generateKeyPair } from "../../src/index.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { sealChunkXChaCha, openChunkXChaCha } from "../../src/streaming.js";
 
 await test("seal/open roundtrip", async () => {
   const hpke = createHpke({ namespace: "myapp" });
@@ -97,19 +98,51 @@ await test("KAT: known-answer vectors", async () => {
     const { publicJwk, privateJwk } = await generateKeyPair();
     // Re-seal using deterministic eph seed if provided
     const pt = Buffer.from(vector.plaintext_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-    const { envelope } = await hpke.seal({
+    const sealArgs: any = {
       kid: vector.kid,
       recipientPublicJwk: publicJwk,
       plaintext: new Uint8Array(pt),
       x402: vector.x402,
       __testEphSeed32: vector.eph_seed32_b64u ? new Uint8Array(Buffer.from(vector.eph_seed32_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64")) : undefined,
-    } as any);
+    };
+    if (vector.app) sealArgs.app = vector.app;
+    if (vector.allowlist || vector.sidecar_as) sealArgs.public = { x402Headers: true, appHeaderAllowlist: vector.allowlist || [], as: vector.sidecar_as || "headers" };
+    const { envelope, publicHeaders, publicJson } = await hpke.seal(sealArgs);
     if (vector.envelope) {
       assert.equal(envelope.aad, vector.envelope.aad);
       assert.equal(envelope.enc, vector.envelope.enc);
       assert.equal(envelope.kid, vector.envelope.kid);
     }
-    const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope });
+    const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, publicHeaders, publicJson });
     assert.equal(Buffer.from(opened.plaintext).toString("base64"), Buffer.from(pt).toString("base64"));
+  }
+});
+
+await test("KAT: streaming vectors", async () => {
+  const katPath = path.resolve(process.cwd(), "docs", "KATs", "kat_stream_v1.json");
+  let kat: any;
+  try {
+    kat = JSON.parse(readFileSync(katPath, "utf8"));
+  } catch {
+    return;
+  }
+  for (const v of kat.vectors ?? []) {
+    const key = Buffer.from(v.key_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const prefix = Buffer.from(v.prefix16_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const aad = v.aad_b64u ? Buffer.from(v.aad_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64") : null;
+    const plains = v.chunks_b64u.map((b64: string) => new Uint8Array(Buffer.from(b64.replace(/-/g, "+").replace(/_/g, "/"), "base64")));
+    const cts: Uint8Array[] = [];
+    let seq = v.start_seq || 0;
+    for (const chunk of plains) {
+      const ct = await sealChunkXChaCha(new Uint8Array(key), new Uint8Array(prefix), seq, chunk, aad ?? undefined);
+      cts.push(ct);
+      seq += 1;
+    }
+    seq = v.start_seq || 0;
+    for (let i = 0; i < cts.length; i++) {
+      const pt = await openChunkXChaCha(new Uint8Array(key), new Uint8Array(prefix), seq, cts[i], aad ?? undefined);
+      assert.equal(Buffer.from(pt).toString("base64"), Buffer.from(plains[i]).toString("base64"));
+      seq += 1;
+    }
   }
 });

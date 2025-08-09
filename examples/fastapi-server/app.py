@@ -10,7 +10,7 @@ from x402_hpke.keys import generate_keypair
 PUB, PRIV = generate_keypair()
 
 @app.post("/quote")
-async def quote():
+async def quote(request: Request):
     x402 = {
         "invoiceId": "inv_demo",
         "chainId": 8453,
@@ -21,15 +21,40 @@ async def quote():
         "expiry": int(time.time()) + 600,
         "priceHash": "0x" + "d"*64,
     }
+    # App metadata: keep sensitive items in AAD; expose only non-sensitive hints (e.g., trace id)
+    trace_id = request.headers.get("X-Trace-Id") or _random_id()
+    app_meta = {"traceId": trace_id, "model": "gpt-4o-mini"}
     payload = json.dumps({"type": "quote"}).encode()
-    env, _ = hpke.seal(kid="kid1", recipient_public_jwk=PUB, plaintext=payload, x402=x402)
-    return Response(content=json.dumps(env), status_code=402, media_type="application/myapp+hpke", headers={"Cache-Control": "no-store"})
+    env, hdrs = hpke.seal(
+        kid="kid1",
+        recipient_public_jwk=PUB,
+        plaintext=payload,
+        x402=x402,
+        app=app_meta,
+        public={"x402Headers": True, "appHeaderAllowlist": ["traceId"], "as": "headers"},
+    )
+    headers = {"Cache-Control": "no-store"}
+    if hdrs:
+        headers.update(hdrs)
+    return Response(content=json.dumps(env), status_code=402, media_type="application/x402-envelope+json", headers=headers)
 
 @app.post("/fulfill")
 async def fulfill(request: Request):
     env = await request.json()
     try:
-        pt, x402_fields, app_fields = hpke.open(recipient_private_jwk=PRIV, envelope=env, expected_kid=env.get("kid"))
+        # reconstruct sidecar mapping
+        sidecar = {k: v for k, v in request.headers.items() if k.lower() in ("x-x402-invoice-id", "x-x402-expiry", "x-myapp-trace-id")}
+        pt, x402_fields, app_fields = hpke.open(
+            recipient_private_jwk=PRIV,
+            envelope=env,
+            expected_kid=env.get("kid"),
+            public_headers=sidecar,
+        )
         return {"ok": True}
     except Exception as e:
         return Response(content=json.dumps({"error": str(e)}), status_code=400) 
+
+
+def _random_id() -> str:
+    import secrets
+    return secrets.token_hex(12)

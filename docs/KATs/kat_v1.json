@@ -19,6 +19,46 @@
       "plaintext_b64u": "aGVsbG8",
       "eph_seed32_b64u": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
       
+    },
+    {
+      "name": "with-app-and-headers",
+      "ns": "myapp",
+      "kid": "kid-app-h",
+      "x402": {
+        "invoiceId": "inv_app_h",
+        "chainId": 8453,
+        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "amount": "2000",
+        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expiry": 1754650100,
+        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "app": { "traceId": "abc-123", "region": "us" },
+      "sidecar_as": "headers",
+      "allowlist": ["traceId"],
+      "plaintext_b64u": "YXBwLWhlYWRlcnM",
+      "eph_seed32_b64u": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEA"
+    },
+    {
+      "name": "with-app-and-json",
+      "ns": "myapp",
+      "kid": "kid-app-j",
+      "x402": {
+        "invoiceId": "inv_app_j",
+        "chainId": 8453,
+        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "amount": "3000",
+        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expiry": 1754650200,
+        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "app": { "traceId": "xyz-789" },
+      "sidecar_as": "json",
+      "allowlist": ["traceId"],
+      "plaintext_b64u": "anNvbi1zaWRlY2Fy",
+      "eph_seed32_b64u": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA"
     }
   ]
 }

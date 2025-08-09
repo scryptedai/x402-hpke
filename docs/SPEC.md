@@ -17,6 +17,15 @@ Notes:
 - We use ChaCha20-Poly1305 for the envelope to align with RFC 9180 (96-bit nonce).
 - Streaming helpers use XChaCha20-Poly1305 for chunking (separate key/nonce prefix), see STREAMING.md.
 
+Suite mapping (informative)
+- v1 `X25519-HKDF-SHA256-CHACHA20POLY1305`:
+  - KEM = X25519
+  - KDF = HKDF-SHA256
+  - AEAD (envelope) = ChaCha20-Poly1305 (IETF 96-bit nonce)
+  - Streaming AEAD = XChaCha20-Poly1305
+  - Envelope MAY include `suite`; APIs expose `hpke.suite` and `hpke.version`.
+  - Future: An AES-256-GCM profile may be added for FIPS-leaning environments under a distinct suite ID.
+
 HKDF info binding (normative)
 - Seal: `"x402-hpke:v1|KDF=<KDF>|AEAD=<AEAD>|ns=<NS>|enc=<ENC>|pkR=<PKR>"`
 - Open: `"x402-hpke:v1|KDF=<KDF>|AEAD=<AEAD>|ns=<NS>|enc=<ENC>|pkR=<PKR>"`

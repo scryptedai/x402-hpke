@@ -1,0 +1,22 @@
+{
+  "version": "v1",
+  "aead": "XCHACHA20-POLY1305",
+  "vectors": [
+    {
+      "name": "stream-basic-two-chunks",
+      "key_b64u": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "prefix16_b64u": "AAAAAAAAAAAAAAAAAAAAAA",
+      "chunks_b64u": ["aGVsbG8", "d29ybGQ"],
+      "aad_b64u": null,
+      "start_seq": 0
+    },
+    {
+      "name": "stream-with-aad",
+      "key_b64u": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEA",
+      "prefix16_b64u": "AAAAAAAAAAAAAAAAAAAAAA",
+      "chunks_b64u": ["Y2h1bmsx", "Y2h1bmsy"],
+      "aad_b64u": "YWFkLWJ5dGVz",
+      "start_seq": 5
+    }
+  ]
+}

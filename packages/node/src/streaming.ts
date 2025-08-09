@@ -1,4 +1,5 @@
 import sodium from "libsodium-wrappers";
+import { AeadLimitError, StreamNoncePrefixLenError } from "./errors.js";
 
 export type StreamingKey = Uint8Array; // 32 bytes
 
@@ -20,7 +21,7 @@ export async function sealChunkXChaCha(
   aad?: Uint8Array
 ): Promise<Uint8Array> {
   await sodium.ready;
-  if (noncePrefix16.length !== 16) throw new Error("STREAM_NONCE_PREFIX_LEN");
+  if (noncePrefix16.length !== 16) throw new StreamNoncePrefixLenError("STREAM_NONCE_PREFIX_LEN");
   const nonce = new Uint8Array(24);
   nonce.set(noncePrefix16, 0);
   nonce.set(le64(seq), 16);
@@ -35,7 +36,7 @@ export async function openChunkXChaCha(
   aad?: Uint8Array
 ): Promise<Uint8Array> {
   await sodium.ready;
-  if (noncePrefix16.length !== 16) throw new Error("STREAM_NONCE_PREFIX_LEN");
+  if (noncePrefix16.length !== 16) throw new StreamNoncePrefixLenError("STREAM_NONCE_PREFIX_LEN");
   const nonce = new Uint8Array(24);
   nonce.set(noncePrefix16, 0);
   nonce.set(le64(seq), 16);
@@ -59,8 +60,8 @@ export class XChaChaStreamLimiter {
   }
 
   private enforceLimits(nextBytes: number) {
-    if (this.chunksUsed + 1 > this.maxChunks) throw new Error("AEAD_LIMIT");
-    if (this.bytesUsed + nextBytes > this.maxBytes) throw new Error("AEAD_LIMIT");
+    if (this.chunksUsed + 1 > this.maxChunks) throw new AeadLimitError("AEAD_LIMIT");
+    if (this.bytesUsed + nextBytes > this.maxBytes) throw new AeadLimitError("AEAD_LIMIT");
   }
 
   async seal(seq: number, chunk: Uint8Array, aad?: Uint8Array): Promise<Uint8Array> {
