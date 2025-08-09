@@ -167,6 +167,7 @@ Notes for running examples:
 - `docs/JWKS.md` — key publishing rotation and caching
 - `docs/HEADERS.md` — sidecar and namespacing rules
 - `docs/STREAMING.md` — streaming design
+ - `docs/THREAT_MODEL.md` — goals, non-goals, attacker model, mitigations, replay guidance
 
 ## Acknowledgements
 ```
