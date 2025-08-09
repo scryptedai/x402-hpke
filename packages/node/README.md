@@ -10,7 +10,7 @@ X25519 / HKDF-SHA256 / ChaCha20-Poly1305 (envelope); streaming helpers use XChaC
 Node >= 22.12
 
 ```bash
-npm install @x402-hpke/node
+npm install @x402-hpke/node@next
 ```
 
 ## Quickstart

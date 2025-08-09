@@ -1,6 +1,6 @@
 {
   "name": "@x402-hpke/node",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "Provider-agnostic HPKE envelope library for x402 (Node) — cross-language interop with Python",
   "author": "Tim Cotten <tcotten@scrypted.ai>",
   "license": "MIT",
