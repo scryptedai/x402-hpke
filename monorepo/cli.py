@@ -20,14 +20,21 @@ def build_all() -> None:
     code |= _run(["poetry", "lock", "--no-update"], cwd=PY_DIR)
     code |= _run(["poetry", "install"], cwd=PY_DIR)
     # Build Node package
-    code |= _run(["npm", "ci"], cwd=NODE_DIR)
+    # Use npm install in CI, npm ci locally for determinism
+    if os.getenv("GITHUB_ACTIONS") == "true":
+      code |= _run(["npm", "install"], cwd=NODE_DIR)
+    else:
+      code |= _run(["npm", "ci"], cwd=NODE_DIR)
     code |= _run(["npm", "run", "build"], cwd=NODE_DIR)
     sys.exit(code)
 
 
 def test_node() -> None:
     code = 0
-    code |= _run(["npm", "ci"], cwd=NODE_DIR)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+      code |= _run(["npm", "install"], cwd=NODE_DIR)
+    else:
+      code |= _run(["npm", "ci"], cwd=NODE_DIR)
     code |= _run(["npm", "test"], cwd=NODE_DIR)
     sys.exit(code)
 
@@ -47,7 +54,10 @@ def test_all() -> None:
     code |= _run(["poetry", "lock", "--no-update"], cwd=PY_DIR)
     code |= _run(["poetry", "install"], cwd=PY_DIR)
     # Run Node tests (will invoke Poetry scripts)
-    code |= _run(["npm", "ci"], cwd=NODE_DIR)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+      code |= _run(["npm", "install"], cwd=NODE_DIR)
+    else:
+      code |= _run(["npm", "ci"], cwd=NODE_DIR)
     code |= _run(["npm", "test"], cwd=NODE_DIR)
     code |= _run(["poetry", "run", "pytest", "-q"], cwd=PY_DIR)
     sys.exit(code)
@@ -61,7 +71,10 @@ def ci() -> None:
     code |= _run(["poetry", "lock", "--no-update"], cwd=PY_DIR)
     code |= _run(["poetry", "install"], cwd=PY_DIR)
     # Build and test Node
-    code |= _run(["npm", "ci"], cwd=NODE_DIR)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+      code |= _run(["npm", "install"], cwd=NODE_DIR)
+    else:
+      code |= _run(["npm", "ci"], cwd=NODE_DIR)
     code |= _run(["npm", "run", "build"], cwd=NODE_DIR)
     code |= _run(["npm", "test"], cwd=NODE_DIR)
     code |= _run(["poetry", "run", "pytest", "-q"], cwd=PY_DIR)
