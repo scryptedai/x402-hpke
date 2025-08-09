@@ -10,7 +10,7 @@ X25519 / HKDF-SHA256 / ChaCha20-Poly1305 (envelope); streaming helpers use XChaC
 Python >= 3.12
 
 ```bash
-pip install x402-hpke
+pip install --pre x402-hpke
 ```
 
 ## Quickstart

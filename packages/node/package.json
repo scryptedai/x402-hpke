@@ -1,7 +1,7 @@
 {
   "name": "@x402-hpke/node",
   "version": "0.1.0",
-  "description": "Provider-agnostic HPKE envelope library for x402 (Node)",
+  "description": "Provider-agnostic HPKE envelope library for x402 (Node) — cross-language interop with Python",
   "author": "Tim Cotten <tcotten@scrypted.ai>",
   "license": "MIT",
   "type": "module",
@@ -12,6 +12,22 @@
   },
   "files": [
     "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scryptedai/x402-hpke.git"
+  },
+  "homepage": "https://github.com/scryptedai/x402-hpke",
+  "bugs": {
+    "url": "https://github.com/scryptedai/x402-hpke/issues"
+  },
+  "keywords": [
+    "hpke",
+    "aead",
+    "x25519",
+    "jwks",
+    "envelope",
+    "x402"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

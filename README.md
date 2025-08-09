@@ -32,6 +32,8 @@ Python (>= 3.12):
 ```bash
 cd packages/python
 poetry install
+# prerelease is available on PyPI
+pip install --pre x402-hpke
 ```
 
 ## Monorepo build/test (from repo root)
