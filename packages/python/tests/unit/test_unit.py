@@ -17,6 +17,7 @@ def test_seal_open_roundtrip():
         "priceHash": "0x" + "d"*64,
     }
     payload = b"hello"
+    x402["replyToJwk"] = pub
     env, _ = hpke.seal(kid="kid1", recipient_public_jwk=pub, plaintext=payload, x402=x402)
     pt, x, app = hpke.open(recipient_private_jwk=priv, envelope=env, expected_kid="kid1")
     assert pt == payload
@@ -39,6 +40,7 @@ def test_reject_low_order_shared_secret():
     }
     # Craft an envelope with enc = all-zero (invalid/low-order surrogate)
     payload = b"hi"
+    x402["replyToJwk"] = pub
     env, _ = hpke.seal(kid="kid1", recipient_public_jwk=pub, plaintext=payload, x402=x402)
     env_bad = dict(env)
     import base64
@@ -66,6 +68,7 @@ def test_reject_aead_mismatch_and_unsupported():
         "priceHash": "0x" + "d"*64,
     }
     payload = b"ok"
+    x402["replyToJwk"] = pub
     env, _ = hpke.seal(kid="kid1", recipient_public_jwk=pub, plaintext=payload, x402=x402)
     bad = dict(env)
     bad["aead"] = "AES-256-GCM"

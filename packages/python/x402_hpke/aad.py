@@ -1,7 +1,7 @@
 import json
 import re
 from typing import Any, Dict, Tuple, Optional
-from .errors import NsForbidden, NsCollision, X402Error
+from .errors import NsForbidden, NsCollision, X402Error, ReplyToMissing, ReplyToFormat
 
 
 def _normalize_hex(s: str, expected_len: Optional[int] = None) -> str:
@@ -35,9 +35,21 @@ def validate_x402(x: Dict[str, Any]) -> Dict[str, Any]:
         "txHash": _normalize_hex(str(x.get("txHash", "")), 64),
         "expiry": int(x.get("expiry")),
         "priceHash": _normalize_hex(str(x.get("priceHash", "")), 64),
+        "replyToJwks": str(x.get("replyToJwks")) if x.get("replyToJwks") else None,
+        "replyToKid": str(x.get("replyToKid")) if x.get("replyToKid") else None,
+        "replyToJwk": x.get("replyToJwk"),
+        "replyPublicOk": bool(x.get("replyPublicOk")) if x.get("replyPublicOk") is not None else None,
     }
     if not v["invoiceId"]:
         raise X402Error("X402_SCHEMA")
+    # Enforce reply-to presence and format
+    has_jwks = bool(v.get("replyToJwks")) and bool(v.get("replyToKid"))
+    rjwk = v.get("replyToJwk")
+    has_jwk = bool(rjwk) and isinstance(rjwk, dict) and rjwk.get("kty") == "OKP" and rjwk.get("crv") == "X25519" and isinstance(rjwk.get("x"), str)
+    if not has_jwks and not has_jwk:
+        raise ReplyToMissing("REPLY_TO_REQUIRED")
+    if v.get("replyToJwks") and not str(v["replyToJwks"]).startswith("https://"):
+        raise ReplyToFormat("REPLY_TO_JWKS_HTTPS_REQUIRED")
     return v
 
 

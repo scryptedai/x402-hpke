@@ -26,6 +26,11 @@ export async function generateKeyPair(): Promise<{ publicJwk: OkpJwk; privateJwk
   return { publicJwk, privateJwk };
 }
 
+export async function generatePublicJwk(): Promise<OkpJwk> {
+  const { publicJwk } = await generateKeyPair();
+  return publicJwk;
+}
+
 export function selectJwkFromJwks(jwks: { keys: OkpJwk[] }, kid: string): OkpJwk | undefined {
   return (jwks.keys || []).find((k) => k.kid === kid);
 }

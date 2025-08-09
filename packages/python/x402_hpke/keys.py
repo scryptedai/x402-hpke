@@ -31,6 +31,12 @@ def generate_keypair() -> Tuple[Dict, Dict]:
     return public_jwk, private_jwk
 
 
+def generate_public_jwk() -> Dict:
+    """Return a freshly generated public JWK (OKP X25519)."""
+    pub, _ = generate_keypair()
+    return pub
+
+
 def jwk_to_public_bytes(jwk: Dict) -> bytes:
     if jwk.get("kty") != "OKP" or jwk.get("crv") != "X25519" or "x" not in jwk:
         raise InvalidEnvelope("INVALID_ENVELOPE")

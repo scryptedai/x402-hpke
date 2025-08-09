@@ -17,7 +17,8 @@ await test("seal/open roundtrip", async () => {
     txHash: "0x" + "c".repeat(64),
     expiry: 9999999999,
     priceHash: "0x" + "d".repeat(64),
-  };
+  } as any;
+  x402.replyToJwk = publicJwk;
   const payload = new TextEncoder().encode("hello");
   const { envelope } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402 });
   const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kid1" });
@@ -37,7 +38,8 @@ await test("header sidecar AAD equivalence", async () => {
     txHash: "0x" + "c".repeat(64),
     expiry: 9999999900,
     priceHash: "0x" + "d".repeat(64),
-  };
+  } as any;
+  x402.replyToJwk = publicJwk;
   const payload = new TextEncoder().encode("bye");
   const { envelope, publicHeaders } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402, public: { x402Headers: true, as: "headers" } });
   assert.ok(publicHeaders);
@@ -57,7 +59,8 @@ await test("reject low-order shared secret", async () => {
     txHash: "0x" + "c".repeat(64),
     expiry: 9999999999,
     priceHash: "0x" + "d".repeat(64),
-  };
+  } as any;
+  x402.replyToJwk = publicJwk;
   const payload = new TextEncoder().encode("hi");
   const { envelope } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402 });
   const encZero = Buffer.alloc(32).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -77,7 +80,8 @@ await test("reject AEAD mismatch and unsupported", async () => {
     txHash: "0x" + "c".repeat(64),
     expiry: 9999999999,
     priceHash: "0x" + "d".repeat(64),
-  };
+  } as any;
+  x402.replyToJwk = publicJwk;
   const payload = new TextEncoder().encode("ok");
   const { envelope } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402 });
   const bad = { ...envelope, aead: "AES-256-GCM" } as typeof envelope;

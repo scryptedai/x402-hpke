@@ -27,7 +27,7 @@ await test("python seals -> node opens", async () => {
     kid: "kidPY",
     recipient_public_jwk: publicJwk,
     plaintext_b64u: Buffer.from(payload).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"),
-    x402,
+    x402: { ...x402, replyToJwk: publicJwk },
   };
   const res = spawnSync("poetry", ["run", "python", "scripts/seal.py"], {
     cwd: pyRoot,

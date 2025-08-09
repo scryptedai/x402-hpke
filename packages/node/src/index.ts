@@ -14,11 +14,11 @@ export type CreateHpkeOptions = {
 };
 
 import { seal, open } from "./envelope.js";
-import { generateKeyPair, selectJwkFromJwks, fetchJwks, setJwks, type Jwks } from "./keys.js";
+import { generateKeyPair, selectJwkFromJwks, fetchJwks, setJwks, type Jwks, generatePublicJwk } from "./keys.js";
 import { canonicalAad, buildCanonicalAad, validateX402 } from "./aad.js";
 import { buildX402Headers } from "./headers.js";
 export { canonicalAad, buildCanonicalAad, validateX402 } from "./aad.js";
-export { generateKeyPair, selectJwkFromJwks } from "./keys.js";
+export { generateKeyPair, selectJwkFromJwks, generatePublicJwk } from "./keys.js";
 export { buildX402Headers } from "./headers.js";
 export { sealChunkXChaCha, openChunkXChaCha } from "./streaming.js";
 export * as X402Errors from "./errors.js";
@@ -45,6 +45,7 @@ export function createHpke(opts: CreateHpkeOptions) {
     open: (args: Parameters<typeof open>[0]) => open({ ...args, namespace: ns, kem, kdf, aead }),
     canonicalAad: (x402: any, app?: any) => canonicalAad(ns, x402, app),
     generateKeyPair,
+    generatePublicJwk,
     selectJwkFromJwks,
     buildX402Headers: (x: any) => buildX402Headers(x),
     // Simplified JWKS fetch: prefer explicit url, fall back to createHpke(opts).jwksUrl

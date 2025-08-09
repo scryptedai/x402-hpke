@@ -14,6 +14,7 @@ export type X402Fields = {
   replyToJwks?: string; // https URL to client JWKS
   replyToKid?: string;  // client's key id
   replyToJwk?: { kty: "OKP"; crv: "X25519"; x: string }; // raw client public JWK (fallback)
+  replyPublicOk?: boolean; // optional opt-in for plaintext replies
 };
 
 const enc = new TextEncoder();
@@ -33,7 +34,7 @@ function validateAmount(amount: string): string {
   return amount;
 }
 
-export function validateX402(x: any): X402Fields {
+export function validateX402(x: any, opts?: { skipReplyToCheck?: boolean }): X402Fields {
   const v: X402Fields = {
     invoiceId: String(x.invoiceId || ""),
     chainId: Number(x.chainId),
@@ -51,14 +52,16 @@ export function validateX402(x: any): X402Fields {
   if (!v.invoiceId || !Number.isInteger(v.chainId) || !Number.isInteger(v.expiry)) {
     throw new Error("X402_SCHEMA");
   }
-  // Enforce that we have sufficient reply-to info: either (replyToJwks + replyToKid) or (replyToJwk)
-  const hasJwks = !!v.replyToJwks && !!v.replyToKid;
-  const hasJwk = !!v.replyToJwk && v.replyToJwk.kty === "OKP" && v.replyToJwk.crv === "X25519" && typeof v.replyToJwk.x === "string";
-  if (!hasJwks && !hasJwk) {
-    throw new ReplyToMissingError("REPLY_TO_REQUIRED");
-  }
-  if (v.replyToJwks && !/^https:\/\//.test(v.replyToJwks)) {
-    throw new ReplyToFormatError("REPLY_TO_JWKS_HTTPS_REQUIRED");
+  if (!opts?.skipReplyToCheck) {
+    // Enforce that we have sufficient reply-to info: either (replyToJwks + replyToKid) or (replyToJwk)
+    const hasJwks = !!v.replyToJwks && !!v.replyToKid;
+    const hasJwk = !!v.replyToJwk && v.replyToJwk.kty === "OKP" && v.replyToJwk.crv === "X25519" && typeof v.replyToJwk.x === "string";
+    if (!hasJwks && !hasJwk) {
+      throw new ReplyToMissingError("REPLY_TO_REQUIRED");
+    }
+    if (v.replyToJwks && !/^https:\/\//.test(v.replyToJwks)) {
+      throw new ReplyToFormatError("REPLY_TO_JWKS_HTTPS_REQUIRED");
+    }
   }
   return v;
 }
@@ -70,13 +73,13 @@ function canonicalJson(obj: Record<string, any>): string {
   return JSON.stringify(out);
 }
 
-export function buildCanonicalAad(namespace: string, x402: X402Fields, app?: Record<string, any>): {
+export function buildCanonicalAad(namespace: string, x402: X402Fields, app?: Record<string, any>, opts?: { skipReplyToCheck?: boolean }): {
   aadBytes: Uint8Array;
   x402Normalized: X402Fields;
   appNormalized?: Record<string, any>;
 } {
   if (!namespace || namespace.toLowerCase() === "x402") throw new NsForbiddenError("NS_FORBIDDEN");
-  const x = validateX402(x402);
+  const x = validateX402(x402, opts);
   if (app) {
     for (const k of Object.keys(app)) {
       if (k === "x402" || k.startsWith("x402") || k in x) throw new NsCollisionError("NS_COLLISION");

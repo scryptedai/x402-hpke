@@ -84,3 +84,9 @@ class JwksEmpty(X402Error):
 
 class KidNotFound(X402Error):
     pass
+
+class ReplyToMissing(X402Error):
+    pass
+
+class ReplyToFormat(X402Error):
+    pass

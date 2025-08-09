@@ -104,6 +104,9 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                     for k in app_allow:
                         if k not in app:
                             raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
+                        kl = k.lower()
+                        if kl.startswith("replyto") or kl == "replypublicok":
+                            raise PublicKeyNotInAad("REPLY_TO_SIDECAR_FORBIDDEN")
                         hdrs[f"X-{namespace}-{k}"] = str(app[k])
                 return envelope, hdrs
             else:
@@ -114,6 +117,9 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                     for k in app_allow:
                         if k not in app:
                             raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
+                        kl = k.lower()
+                        if kl.startswith("replyto") or kl == "replypublicok":
+                            raise PublicKeyNotInAad("REPLY_TO_SIDECAR_FORBIDDEN")
                         j[f"X-{namespace}-{k}"] = str(app[k])
                 return envelope, j
 

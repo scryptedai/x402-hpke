@@ -11,6 +11,7 @@ import {
   InvalidEnvelopeError,
   KidMismatchError,
   PublicKeyNotInAadError,
+  ReplyToSidecarForbiddenError,
 } from "./errors.js";
 
 function b64u(bytes: Uint8Array): string {
@@ -84,7 +85,7 @@ export async function seal(args: {
   if ((plaintext as any) && typeof plaintext === 'object') {
     // guardrail: if caller mistakenly includes x402/app keys in plaintext object, reject in v1 (payload must be opaque bytes)
   }
-  const { aadBytes, x402Normalized } = buildCanonicalAad(namespace, x402, app);
+  const { aadBytes, x402Normalized } = buildCanonicalAad(namespace, x402, app, { skipReplyToCheck: false });
 
   const eph = args.__testEphSeed32
     ? sodium.crypto_kx_seed_keypair(args.__testEphSeed32)
@@ -130,7 +131,10 @@ export async function seal(args: {
     if (wantX402) Object.assign(headers, buildX402Headers(x402Normalized));
     if (appAllow.length > 0 && args.app) {
       for (const k of appAllow) {
-        if (k.toLowerCase().startsWith("replyto")) throw new PublicKeyNotInAadError("REPLY_TO_SIDECAR_FORBIDDEN");
+        const kl = k.toLowerCase();
+        if (kl.startsWith("replyto") || kl === "replypublicok") {
+          throw new ReplyToSidecarForbiddenError("REPLY_TO_SIDECAR_FORBIDDEN");
+        }
         if (!(k in args.app)) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
         headers[`X-${args.namespace}-${k.replace(/[^A-Za-z0-9-]/g, "-")}`] = String(args.app[k]);
       }
@@ -195,10 +199,23 @@ export async function open(args: {
       expiry: Number(get("X-X402-Expiry")),
       priceHash: get("X-X402-Price-Hash"),
     };
-    const rebuilt = buildCanonicalAad(namespace, hx);
-    const rebuiltAad = rebuilt.aadBytes;
-    const a = Buffer.from(aadBytes);
-    const b = Buffer.from(rebuiltAad);
+    // Preserve reply-to and public-reply fields from original x402 for JSON-equivalence
+    const origStr = Buffer.from(aadBytes).toString("utf8");
+    const origParts = origStr.split("|");
+    const origXJson = origParts[2] ?? "";
+    let origX: any = {};
+    try { origX = JSON.parse(origXJson); } catch {}
+    hx.replyToJwks = origX.replyToJwks;
+    hx.replyToKid = origX.replyToKid;
+    hx.replyToJwk = origX.replyToJwk;
+    hx.replyPublicOk = origX.replyPublicOk;
+
+    const rebuilt = buildCanonicalAad(namespace, hx, undefined, { skipReplyToCheck: true });
+    const rebuiltStr = Buffer.from(rebuilt.aadBytes).toString("utf8");
+    const rebuiltParts = rebuiltStr.split("|");
+    const rebuiltXJson = rebuiltParts[2] ?? "";
+    const a = Buffer.from(origXJson, "utf8");
+    const b = Buffer.from(rebuiltXJson, "utf8");
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
       throw new AadMismatchError("AAD_MISMATCH");
     }
