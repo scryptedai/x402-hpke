@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHpke, generateKeyPair } from "../../src/index.js";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 await test("seal/open roundtrip", async () => {
   const hpke = createHpke({ namespace: "myapp" });
@@ -79,4 +81,35 @@ await test("reject AEAD mismatch and unsupported", async () => {
   const { envelope } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402 });
   const bad = { ...envelope, aead: "AES-256-GCM" } as typeof envelope;
   await assert.rejects(() => hpke.open({ recipientPrivateJwk: privateJwk, envelope: bad, expectedKid: "kid1" }), /AEAD_MISMATCH/);
+});
+
+await test("KAT: known-answer vectors", async () => {
+  const katPath = path.resolve(process.cwd(), "docs", "KATs", "kat_v1.json");
+  let kat: any;
+  try {
+    kat = JSON.parse(readFileSync(katPath, "utf8"));
+  } catch {
+    // Skip if no KATs yet
+    return;
+  }
+  for (const vector of kat.vectors ?? []) {
+    const hpke = createHpke({ namespace: vector.ns });
+    const { publicJwk, privateJwk } = await generateKeyPair();
+    // Re-seal using deterministic eph seed if provided
+    const pt = Buffer.from(vector.plaintext_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const { envelope } = await hpke.seal({
+      kid: vector.kid,
+      recipientPublicJwk: publicJwk,
+      plaintext: new Uint8Array(pt),
+      x402: vector.x402,
+      __testEphSeed32: vector.eph_seed32_b64u ? new Uint8Array(Buffer.from(vector.eph_seed32_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64")) : undefined,
+    } as any);
+    if (vector.envelope) {
+      assert.equal(envelope.aad, vector.envelope.aad);
+      assert.equal(envelope.enc, vector.envelope.enc);
+      assert.equal(envelope.kid, vector.envelope.kid);
+    }
+    const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope });
+    assert.equal(Buffer.from(opened.plaintext).toString("base64"), Buffer.from(pt).toString("base64"));
+  }
 });

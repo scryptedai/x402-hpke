@@ -31,3 +31,31 @@ def open_chunk_xchacha(key: bytes, nonce_prefix16: bytes, seq: int, ciphertext: 
     nonce = nonce_prefix16 + _le64(seq)
     return bindings.crypto_aead_xchacha20poly1305_ietf_decrypt(ciphertext, aad, nonce, key)
 
+class XChaChaStreamLimiter:
+    def __init__(self, key: bytes, nonce_prefix16: bytes, max_chunks: int = 1_000_000, max_bytes: int = 1_000_000_000) -> None:
+        if len(key) != 32:
+            raise ValueError("STREAM_KEY_LEN")
+        if len(nonce_prefix16) != 16:
+            raise ValueError("STREAM_NONCE_PREFIX_LEN")
+        self._key = key
+        self._prefix = nonce_prefix16
+        self._max_chunks = max_chunks
+        self._max_bytes = max_bytes
+        self._chunks_used = 0
+        self._bytes_used = 0
+
+    def _enforce(self, next_bytes: int) -> None:
+        if self._chunks_used + 1 > self._max_chunks:
+            raise ValueError("AEAD_LIMIT")
+        if self._bytes_used + next_bytes > self._max_bytes:
+            raise ValueError("AEAD_LIMIT")
+
+    def seal(self, seq: int, chunk: bytes, aad: Optional[bytes] = None) -> bytes:
+        self._enforce(len(chunk))
+        ct = seal_chunk_xchacha(self._key, self._prefix, seq, chunk, aad)
+        self._chunks_used += 1
+        self._bytes_used += len(chunk)
+        return ct
+
+    def open(self, seq: int, ct: bytes, aad: Optional[bytes] = None) -> bytes:
+        return open_chunk_xchacha(self._key, self._prefix, seq, ct, aad)

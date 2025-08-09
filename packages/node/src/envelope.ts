@@ -2,7 +2,7 @@ import sodium from "libsodium-wrappers";
 import { buildCanonicalAad, X402Fields } from "./aad.js";
 import { jwkToPublicKeyBytes, jwkToPrivateKeyBytes, OkpJwk } from "./keys.js";
 import { buildX402Headers } from "./headers.js";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 function b64u(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -38,6 +38,7 @@ function isAllZero(bytes: Uint8Array): boolean {
 export type Envelope = {
   typ: "hpke-envelope";
   ver: "1";
+  suite?: "X25519-HKDF-SHA256-CHACHA20POLY1305";
   ns: string;
   kid: string;
   kem: "X25519";
@@ -63,6 +64,8 @@ export async function seal(args: {
     appHeaderAllowlist?: string[];
     as?: "headers" | "json";
   };
+  // Test-only deterministic ephemeral seed for KAT generation
+  __testEphSeed32?: Uint8Array;
 }): Promise<{ envelope: Envelope; publicHeaders?: Record<string, string>; publicJson?: Record<string, string> }> {
   await sodium.ready;
   const { namespace, kem, kdf, aead, kid, recipientPublicJwk, plaintext, x402, app } = args;
@@ -74,7 +77,9 @@ export async function seal(args: {
   }
   const { aadBytes, x402Normalized } = buildCanonicalAad(namespace, x402, app);
 
-  const eph = sodium.crypto_kx_keypair();
+  const eph = args.__testEphSeed32
+    ? sodium.crypto_kx_seed_keypair(args.__testEphSeed32)
+    : sodium.crypto_kx_keypair();
   const recipientPub = jwkToPublicKeyBytes(recipientPublicJwk);
   if (isAllZero(recipientPub)) {
     throw Object.assign(new Error("ECDH_LOW_ORDER"), { code: 400 });
@@ -84,7 +89,9 @@ export async function seal(args: {
     throw Object.assign(new Error("ECDH_LOW_ORDER"), { code: 400 });
   }
 
-  const info = new TextEncoder().encode(`${namespace}:v1|${b64u(eph.publicKey)}|${b64u(recipientPub)}`);
+  const info = new TextEncoder().encode(
+    `x402-hpke:v1|KDF=${kdf}|AEAD=${aead}|ns=${namespace}|enc=${b64u(eph.publicKey)}|pkR=${b64u(recipientPub)}`
+  );
   const okm = hkdfSha256(shared, info, 32 + 12);
   const key = okm.slice(0, 32);
   const nonce = okm.slice(32);
@@ -94,6 +101,7 @@ export async function seal(args: {
   const envelope: Envelope = {
     typ: "hpke-envelope",
     ver: "1",
+    suite: "X25519-HKDF-SHA256-CHACHA20POLY1305",
     ns: namespace,
     kid,
     kem,
@@ -161,19 +169,27 @@ export async function open(args: {
 
   const sidecar = args.publicHeaders ?? args.publicJson;
   if (sidecar) {
+    const get = (k: string) => {
+      // case-insensitive header matching; trim optional whitespace
+      const found = Object.keys(sidecar).find((h) => h.toLowerCase() === k.toLowerCase());
+      const v = found ? (sidecar as any)[found] : undefined;
+      return typeof v === "string" ? v.trim() : v;
+    };
     const hx: any = {
-      invoiceId: sidecar["X-X402-Invoice-Id"],
-      chainId: Number(sidecar["X-X402-Chain-Id"]),
-      tokenContract: sidecar["X-X402-Token-Contract"],
-      amount: sidecar["X-X402-Amount"],
-      recipient: sidecar["X-X402-Recipient"],
-      txHash: sidecar["X-X402-Tx-Hash"],
-      expiry: Number(sidecar["X-X402-Expiry"]),
-      priceHash: sidecar["X-X402-Price-Hash"],
+      invoiceId: get("X-X402-Invoice-Id"),
+      chainId: Number(get("X-X402-Chain-Id")),
+      tokenContract: get("X-X402-Token-Contract"),
+      amount: get("X-X402-Amount"),
+      recipient: get("X-X402-Recipient"),
+      txHash: get("X-X402-Tx-Hash"),
+      expiry: Number(get("X-X402-Expiry")),
+      priceHash: get("X-X402-Price-Hash"),
     };
     const rebuilt = buildCanonicalAad(namespace, hx);
     const rebuiltAad = rebuilt.aadBytes;
-    if (Buffer.compare(Buffer.from(aadBytes), Buffer.from(rebuiltAad)) !== 0) {
+    const a = Buffer.from(aadBytes);
+    const b = Buffer.from(rebuiltAad);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
       throw Object.assign(new Error("AAD_MISMATCH"), { code: 400 });
     }
   }
@@ -189,7 +205,9 @@ export async function open(args: {
   }
 
   const pkR = sodium.crypto_scalarmult_base(sk);
-  const info = new TextEncoder().encode(`${namespace}:v1|${envelope.enc}|${b64u(pkR)}`);
+  const info = new TextEncoder().encode(
+    `x402-hpke:v1|KDF=${args.kdf}|AEAD=${args.aead}|ns=${namespace}|enc=${envelope.enc}|pkR=${b64u(pkR)}`
+  );
   const okm = hkdfSha256(shared, info, 32 + 12);
   const key = okm.slice(0, 32);
   const nonce = okm.slice(32);

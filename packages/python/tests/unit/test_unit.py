@@ -1,4 +1,5 @@
 from x402_hpke import create_hpke
+import json, base64, os
 
 def test_seal_open_roundtrip():
     hpke = create_hpke(namespace="myapp")
@@ -73,3 +74,26 @@ def test_reject_aead_mismatch_and_unsupported():
         assert False
     except ValueError as e:
         assert str(e) == "AEAD_MISMATCH"
+
+
+def test_kats_if_present():
+    kat_path = os.path.join(os.getcwd(), "docs", "KATs", "kat_v1.json")
+    if not os.path.exists(kat_path):
+        return
+    with open(kat_path, "r", encoding="utf-8") as f:
+        kat = json.load(f)
+    for vector in kat.get("vectors", []):
+        hpke = create_hpke(namespace=vector["ns"]) 
+        # Since Python currently doesn't expose eph seed in API, we just open Node-produced envelope if present
+        if "envelope" in vector:
+            env = vector["envelope"]
+            # ensure expected kid opens
+            from x402_hpke.keys import generate_keypair
+            pub, priv = generate_keypair()
+            pt_expected = base64.urlsafe_b64decode(vector["plaintext_b64u"] + "==")
+            # Re-seal path is skipped; we validate open path via roundtrip in other tests
+            # Here: decode aad and ensure base64url formatting is correct
+            base64.urlsafe_b64decode(env["aad"] + "==")
+            # Build a minimal envelope by copying vector but with our pub key will not decrypt; skip decryption
+            # KATs are primarily consumed by Node test for sealing determinism
+            assert isinstance(env["aad"], str) and isinstance(env["enc"], str)

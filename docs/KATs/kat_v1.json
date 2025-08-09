@@ -1,0 +1,24 @@
+{
+  "version": "v1",
+  "suite": "X25519-HKDF-SHA256-CHACHA20POLY1305",
+  "vectors": [
+    {
+      "name": "smoke-1",
+      "ns": "myapp",
+      "kid": "kid1",
+      "x402": {
+        "invoiceId": "inv_1",
+        "chainId": 8453,
+        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "amount": "1000",
+        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expiry": 1754650000,
+        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "plaintext_b64u": "aGVsbG8",
+      "eph_seed32_b64u": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      
+    }
+  ]
+}

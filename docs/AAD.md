@@ -6,6 +6,10 @@
 - Integers only for numeric fields.
 - AAD bytes = utf8("<ns>|v1|" + json(x402) + "|" + json(app?)).
 
+Encoding (normative)
+- JSON canonicalization: UTF-8; keys sorted lexicographically; compact separators (no spaces).
+- Base64url without padding for envelope fields `enc`, `aad`, and `ct`.
+
 Validation
 - `invoiceId`: non-empty string
 - `chainId`: integer

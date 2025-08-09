@@ -22,6 +22,9 @@ export { generateKeyPair, selectJwkFromJwks } from "./keys.js";
 export { buildX402Headers } from "./headers.js";
 export { sealChunkXChaCha, openChunkXChaCha } from "./streaming.js";
 
+export const X402_HPKE_VERSION = "v1" as const;
+export const X402_HPKE_SUITE = "X25519-HKDF-SHA256-CHACHA20POLY1305" as const;
+
 export function createHpke(opts: CreateHpkeOptions) {
   const ns = opts.namespace;
   if (!ns || ns.toLowerCase() === "x402") {
@@ -35,6 +38,8 @@ export function createHpke(opts: CreateHpkeOptions) {
     kem,
     kdf,
     aead,
+    version: X402_HPKE_VERSION,
+    suite: X402_HPKE_SUITE,
     seal: (args: Parameters<typeof seal>[0]) => seal({ ...args, namespace: ns, kem, kdf, aead }),
     open: (args: Parameters<typeof open>[0]) => open({ ...args, namespace: ns, kem, kdf, aead }),
     canonicalAad: (x402: any, app?: any) => canonicalAad(ns, x402, app),

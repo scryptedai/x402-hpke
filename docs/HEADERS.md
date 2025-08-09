@@ -8,6 +8,10 @@
 - Server must rebuild projection from AAD and compare byte-for-byte. Mismatch → `400 AAD_MISMATCH`.
 - Sidecar keys must be present in AAD; attempts to expose missing keys → `400 PUBLIC_KEY_NOT_IN_AAD`.
 
+Parser requirements (normative)
+- Header name matching is case-insensitive.
+- Trim optional whitespace (OWS) on values prior to AAD rebuild.
+
 ## Header names
 
 - `X-X402-Invoice-Id`
