@@ -14,6 +14,11 @@ Parser requirements (normative)
 - Header name matching is case-insensitive.
 - Trim optional whitespace (OWS) on values prior to AAD rebuild.
 
+Validation order (normative)
+1. Preflight: if `appHeaderAllowlist` contains any `replyTo*` key or `replyPublicOk`, reject with `REPLY_TO_SIDECAR_FORBIDDEN`.
+2. Namespace/collision checks: reject if any app key collides with x402 keys (`NS_COLLISION`).
+3. Rebuild canonical AAD from the sidecar projection and compare byte-for-byte to the x402 JSON portion in AAD (`AAD_MISMATCH` on failure).
+
 ## Header names
 
 - `X-X402-Invoice-Id`
