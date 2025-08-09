@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "x402-hpke"
 version = "0.1.0a1"
-description = "Provider-agnostic HPKE envelope library for x402"
+description = "Provider-agnostic HPKE envelope for the x402 spec. A utility for confidential, verifiable payment requests and receipts across untrusted intermediaries, using canonical AAD, optional sidecar projection, and cross-language (Python/Node) interoperability."
 authors = ["Tim Cotten <tcotten@scrypted.ai>"]
 license = "MIT"
 readme = "README.md"
