@@ -1,31 +1,19 @@
-# AAD (Additional Authenticated Data) Rules
+# AAD (Additional Authenticated Data)
 
-- JSON canonicalization with sorted keys and compact separators.
-- Normalize hex to lowercase, ensure 0x prefix where specified.
-- `amount` is a base-10 uint256 string, no leading zeros (except "0").
-- Integers only for numeric fields.
-- AAD bytes = utf-8 bytes of the string "<ns>|v1|" + json(x402) + "|" + json(app?).
+- Canonicalization: deep sort of keys with compact JSON separators (no spaces). Arrays preserve order; objects sorted lexicographically by key.
+- AAD bytes = UTF‑8 of: `<ns>|v1|` + json(x402_core) + `|` + json(app?).
 
-Reply-to (required)
-- A request MUST contain reply-to information so a recipient can encrypt the response:
-  - Either: `replyToJwks` (HTTPS URL) and `replyToKid`, or
-  - `replyToJwk` (X25519 OKP public key).
-- `replyTo*` fields are part of AAD and MUST NOT be mirrored in sidecar.
+Core (required)
+- `x402_core` is a KV object that MUST include:
+  - `header`: "X-Payment" or "X-Payment-Response" (case-insensitive input; canonicalized in AAD)
+  - `payload`: a non-empty object
+  - Additional keys are allowed and included in canonicalization
 
-Public reply opt-in (optional)
-- `replyPublicOk: true` in AAD allows the recipient to respond without an envelope (plaintext), if they choose.
-- When omitted or false, recipients MUST reply with an envelope using the supplied reply-to.
+App (optional)
+- `app` MAY include arbitrary KV; for standardized extensions, place an array under `app.extensions` of objects `{ header, payload, ... }`.
+- Extension headers must be on the approved list and unique; each `payload` must be a non-empty object.
+- Extensions are sorted by `header` (case-insensitive) during canonicalization.
 
 Encoding (normative)
-- JSON canonicalization: UTF-8; keys sorted lexicographically; compact separators (no spaces).
+- JSON canonicalization: UTF-8; keys sorted; compact separators (",").
 - Base64url without padding for envelope fields `enc`, `aad`, and `ct`.
-
-Validation
-- `invoiceId`: non-empty string
-- `chainId`: integer
-- `tokenContract`: 0x-prefixed, lowercase hex, 40 nibbles
-- `amount`: base-10 uint string (no leading zeros unless "0")
-- `recipient`: 0x-prefixed, lowercase hex, 40 nibbles
-- `txHash`: 0x-prefixed, lowercase hex, 64 nibbles
-- `expiry`: integer (unix seconds)
-- `priceHash`: 0x-prefixed, lowercase hex, 64 nibbles

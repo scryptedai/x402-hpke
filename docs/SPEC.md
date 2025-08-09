@@ -13,13 +13,15 @@
 - JWKS (JSON Web Key Set): HTTPS-only fetch with Cache-Control/Expires; selection by `kid`.
 - Interop: Node seals ↔ Python opens and vice versa. Cross-language tests included.
 
-X-PAYMENT and X-PAYMENT-RESPONSE (first-class)
-- These headers are part of the public x402 transport. This library binds them into AAD by default, and emits them only when `public.revealPayment` is set.
-- Header values: compact JSON. The library also accepts base64-encoded JSON for robustness, but emits JSON by default.
-- Minimum X-PAYMENT payload (EVM exact-on-EIP-3009 example):
-  - `x402Version: 1`, `scheme: "exact"`, `network: <string>`, `payload: { signature: <0x-hex>, authorization: { from, to, value, validAfter, validBefore, nonce } }`.
-- X-PAYMENT-RESPONSE payload: `x402Version`, `scheme`, `network`, `payload` (opaque, integrity-protected when included in AAD).
-- See upstream docs: `https://github.com/coinbase/x402` and Coinbase developer docs.
+Core x402 object (first-class)
+- Required: `{ header: "X-Payment" | "X-Payment-Response", payload: object, ... }`.
+- Minimal validation: header must be one of the two names (case-insensitive), payload must be a non-empty object. Additional keys are allowed.
+- The core is always bound into AAD and can be revealed to transport via `public.revealPayment` (emitting exactly one of the two headers with compact, canonical JSON value of `payload`).
+- See upstream x402 docs: `https://github.com/coinbase/x402`.
+
+Extensions (optional)
+- Approved extension headers (v1): `X-402-Routing`, `X-402-Limits`, `X-402-Acceptable`, `X-402-Metadata`.
+- Place as objects in `app.extensions`: each `{ header, payload, ... }` is canonicalized and AAD-bound; optionally uplift via `public.extensionsAllowlist`.
 
 Media type
 - Provisional media type for content negotiation: `application/x402-envelope+json`.

@@ -41,17 +41,30 @@ def _hkdf_sha256(ikm: bytes, info: bytes, length: int) -> bytes:
     return okm[:length]
 
 
-def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", aead: str = "CHACHA20-POLY1305", jwks_url: Optional[str] = None):
+def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", aead: str = "CHACHA20-POLY1305", jwks_url: Optional[str] = None, x402: Optional[Dict] = None, app: Optional[Dict] = None):
     if not namespace or namespace.lower() == "x402":
         raise NsForbidden("NS_FORBIDDEN")
 
     class _HPKE:
         suite = "X25519-HKDF-SHA256-CHACHA20POLY1305"
         version = "v1"
+        _default_x402 = x402
+        _default_app = dict(app) if isinstance(app, dict) else None
         def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
-            aad_bytes, xnorm, _ = build_canonical_aad(namespace, x402, app)
+            # Merge constructor app defaults with per-call app (per-call wins)
+            merged_app = {}
+            if isinstance(self._default_app, dict):
+                merged_app.update(self._default_app)
+            if isinstance(app, dict):
+                merged_app.update(app)
+            eff_app = merged_app if len(merged_app.keys()) > 0 else None
+            # Use per-call x402 or constructor default
+            eff_x402 = x402 or self._default_x402
+            if eff_x402 is None:
+                raise ValueError("X402_REQUIRED")
+            aad_bytes, xnorm, _ = build_canonical_aad(namespace, eff_x402, eff_app)
             eph_skpk = (
                 bindings.crypto_kx_seed_keypair(__test_eph_seed32)
                 if __test_eph_seed32 is not None
