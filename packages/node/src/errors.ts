@@ -19,4 +19,5 @@ export class StreamNoncePrefixLenError extends X402Error {}
 export class ReplyToMissingError extends X402Error {}
 export class ReplyToSidecarForbiddenError extends X402Error {}
 export class ReplyToFormatError extends X402Error {}
+export class ReplyToConflictError extends X402Error {}
  

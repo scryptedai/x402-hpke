@@ -79,6 +79,14 @@ export async function seal(args: {
 }): Promise<{ envelope: Envelope; publicHeaders?: Record<string, string>; publicJson?: Record<string, string> }> {
   await sodium.ready;
   const { namespace, kem, kdf, aead, kid, recipientPublicJwk, plaintext, x402, app } = args;
+  // Preflight: forbid exposing reply-to metadata or replyPublicOk via sidecar allowlist
+  const preflightAllow = args.public?.appHeaderAllowlist ?? [];
+  for (const k of preflightAllow) {
+    const kl = String(k).toLowerCase();
+    if (kl.startsWith("replyto") || kl === "replypublicok") {
+      throw new ReplyToSidecarForbiddenError("REPLY_TO_SIDECAR_FORBIDDEN");
+    }
+  }
   if (aead !== "CHACHA20-POLY1305") {
     throw new AeadUnsupportedError("AEAD_UNSUPPORTED");
   }
@@ -133,6 +141,7 @@ export async function seal(args: {
       for (const k of appAllow) {
         const kl = k.toLowerCase();
         if (kl.startsWith("replyto") || kl === "replypublicok") {
+          // If app attempts to expose reply-to metadata or replyPublicOk, error clearly
           throw new ReplyToSidecarForbiddenError("REPLY_TO_SIDECAR_FORBIDDEN");
         }
         if (!(k in args.app)) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");

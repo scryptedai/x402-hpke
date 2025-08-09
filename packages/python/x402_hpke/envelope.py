@@ -50,6 +50,12 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
         def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
+            # Preflight: forbid exposing reply-to metadata or replyPublicOk via sidecar allowlist
+            app_allow = (public or {}).get("appHeaderAllowlist", []) or []
+            for k in app_allow:
+                kl = str(k).lower()
+                if kl.startswith("replyto") or kl == "replypublicok":
+                    raise PublicKeyNotInAad("REPLY_TO_SIDECAR_FORBIDDEN")
             aad_bytes, xnorm, _ = build_canonical_aad(namespace, x402, app)
             eph_skpk = (
                 bindings.crypto_kx_seed_keypair(__test_eph_seed32)

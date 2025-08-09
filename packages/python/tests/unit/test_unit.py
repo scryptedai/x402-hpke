@@ -126,3 +126,75 @@ def test_streaming_kats_if_present():
         for i, ct in enumerate(cts):
             pt = open_chunk_xchacha(key, prefix, seq + i, ct, aad)
             assert pt == plains[i]
+
+
+def test_negative_kats_if_present():
+    kat_path = os.path.join(os.getcwd(), "docs", "KATs", "kat_v1_negative.json")
+    if not os.path.exists(kat_path):
+        return
+    with open(kat_path, "r", encoding="utf-8") as f:
+        kat = json.load(f)
+    for v in kat.get("vectors", []):
+        hpke = create_hpke(namespace=v["ns"]) 
+        from x402_hpke.keys import generate_keypair
+        pub, priv = generate_keypair()
+        pt = base64.urlsafe_b64decode(v["plaintext_b64u"] + "==")
+        kwargs = {
+            "kid": v["kid"],
+            "recipient_public_jwk": pub,
+            "plaintext": pt,
+            "x402": v["x402"],
+        }
+        if v.get("app"):
+            kwargs["app"] = v["app"]
+        if v.get("allowlist"):
+            kwargs["public"] = {"x402Headers": True, "appHeaderAllowlist": v["allowlist"], "as": "headers"}
+        try:
+            create_hpke(namespace=v["ns"]).seal(**kwargs)
+            assert False
+        except Exception as e:
+            assert v["expected_error"] in str(e)
+
+
+def test_reject_seal_without_reply_to():
+    hpke = create_hpke(namespace="myapp")
+    from x402_hpke.keys import generate_keypair
+    pub, priv = generate_keypair()
+    x402 = {
+        "invoiceId": "inv_nort",
+        "chainId": 8453,
+        "tokenContract": "0x" + "a"*40,
+        "amount": "1",
+        "recipient": "0x" + "b"*40,
+        "txHash": "0x" + "c"*64,
+        "expiry": 9999999999,
+        "priceHash": "0x" + "d"*64,
+    }
+    try:
+        hpke.seal(kid="kid1", recipient_public_jwk=pub, plaintext=b"no-rt", x402=x402)
+        assert False
+    except Exception as e:
+        assert "REPLY_TO_REQUIRED" in str(e)
+
+
+def test_forbid_reply_keys_in_sidecar():
+    hpke = create_hpke(namespace="myapp")
+    from x402_hpke.keys import generate_keypair
+    pub, priv = generate_keypair()
+    x402 = {
+        "invoiceId": "inv_forbid",
+        "chainId": 8453,
+        "tokenContract": "0x" + "a"*40,
+        "amount": "2",
+        "recipient": "0x" + "b"*40,
+        "txHash": "0x" + "c"*64,
+        "expiry": 9999999999,
+        "priceHash": "0x" + "d"*64,
+        "replyToJwk": pub,
+    }
+    app = {"traceId": "abc", "replyPublicOk": True}
+    try:
+        hpke.seal(kid="kid1", recipient_public_jwk=pub, plaintext=b"forbid", x402=x402, app=app, public={"x402Headers": True, "appHeaderAllowlist": ["replyPublicOk"], "as": "headers"})
+        assert False
+    except Exception as e:
+        assert "REPLY_TO_SIDECAR_FORBIDDEN" in str(e)

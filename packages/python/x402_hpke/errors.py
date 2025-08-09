@@ -90,3 +90,6 @@ class ReplyToMissing(X402Error):
 
 class ReplyToFormat(X402Error):
     pass
+
+class ReplyToConflict(X402Error):
+    pass

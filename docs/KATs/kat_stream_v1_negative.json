@@ -1,0 +1,13 @@
+{
+  "version": "v1",
+  "aead": "XCHACHA20-POLY1305",
+  "vectors": [
+    {
+      "name": "stream-over-chunk-limit",
+      "key_b64u": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "prefix16_b64u": "AAAAAAAAAAAAAAAAAAAAAA",
+      "max_chunks": 1,
+      "chunks_b64u": ["Y2gx", "Y2gy"]
+    }
+  ]
+}

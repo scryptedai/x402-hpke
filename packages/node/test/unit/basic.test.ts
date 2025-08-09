@@ -150,3 +150,93 @@ await test("KAT: streaming vectors", async () => {
     }
   }
 });
+
+await test("KAT: negative vectors (envelope)", async () => {
+  const katPath = path.resolve(process.cwd(), "docs", "KATs", "kat_v1_negative.json");
+  let kat: any;
+  try {
+    kat = JSON.parse(readFileSync(katPath, "utf8"));
+  } catch {
+    return;
+  }
+  for (const v of kat.vectors ?? []) {
+    const hpke = createHpke({ namespace: v.ns });
+    const { publicJwk } = await generateKeyPair();
+    const pt = Buffer.from(v.plaintext_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const sealArgs: any = {
+      kid: v.kid,
+      recipientPublicJwk: publicJwk,
+      plaintext: new Uint8Array(pt),
+      x402: v.x402,
+    };
+    if (v.app) sealArgs.app = v.app;
+    if (v.allowlist) sealArgs.public = { x402Headers: true, appHeaderAllowlist: v.allowlist, as: "headers" };
+    await assert.rejects(() => hpke.seal(sealArgs), new RegExp(v.expected_error));
+  }
+});
+
+await test("KAT: negative vectors (streaming)", async () => {
+  const katPath = path.resolve(process.cwd(), "docs", "KATs", "kat_stream_v1_negative.json");
+  let kat: any;
+  try {
+    kat = JSON.parse(readFileSync(katPath, "utf8"));
+  } catch {
+    return;
+  }
+  for (const v of kat.vectors ?? []) {
+    const key = Buffer.from(v.key_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const prefix = Buffer.from(v.prefix16_b64u.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const limiter = new (await import("../../src/streaming.js")).XChaChaStreamLimiter(new Uint8Array(key), new Uint8Array(prefix), { maxChunks: v.max_chunks ?? 1000000 });
+    await limiter.seal(0, new TextEncoder().encode("ch1"));
+    if (v.max_chunks === 1) {
+      await assert.rejects(() => limiter.seal(1, new TextEncoder().encode("ch2")), /AEAD_LIMIT/);
+    }
+  }
+});
+
+await test("reject seal without reply-to", async () => {
+  const hpke = createHpke({ namespace: "myapp" });
+  const { publicJwk } = await generateKeyPair();
+  const x402 = {
+    invoiceId: "inv_nort",
+    chainId: 8453,
+    tokenContract: "0x" + "a".repeat(40),
+    amount: "1",
+    recipient: "0x" + "b".repeat(40),
+    txHash: "0x" + "c".repeat(64),
+    expiry: 9999999999,
+    priceHash: "0x" + "d".repeat(64),
+  } as any;
+  const payload = new TextEncoder().encode("no-rt");
+  await assert.rejects(() => hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402 }), /REPLY_TO_REQUIRED/);
+});
+
+await test("forbid replyTo*/replyPublicOk in sidecar allowlist", async () => {
+  const hpke = createHpke({ namespace: "myapp" });
+  const { publicJwk } = await generateKeyPair();
+  const x402 = {
+    invoiceId: "inv_forbid",
+    chainId: 8453,
+    tokenContract: "0x" + "a".repeat(40),
+    amount: "2",
+    recipient: "0x" + "b".repeat(40),
+    txHash: "0x" + "c".repeat(64),
+    expiry: 9999999999,
+    priceHash: "0x" + "d".repeat(64),
+    replyToJwk: publicJwk,
+  } as any;
+  const app = { traceId: "abc", replyPublicOk: true } as any;
+  const payload = new TextEncoder().encode("forbid");
+  await assert.rejects(
+    () =>
+      hpke.seal({
+        kid: "kid1",
+        recipientPublicJwk: publicJwk,
+        plaintext: payload,
+        x402,
+        app,
+        public: { x402Headers: true, appHeaderAllowlist: ["replyPublicOk"], as: "headers" },
+      }),
+    /REPLY_TO_SIDECAR_FORBIDDEN/
+  );
+});
