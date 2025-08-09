@@ -9,6 +9,10 @@ Provider-agnostic HPKE envelope library for x402 — Node (TypeScript) and Pytho
 - Packages:
   - Node: `@x402-hpke/node`
   - Python: `x402-hpke`
+
+Current versions
+- Python: `0.1.0a1` (alpha, prerelease)
+- Node: `0.1.0` (preview)
 - Pinned ciphersuite (v1): X25519 / HKDF-SHA256 / ChaCha20-Poly1305 (envelope). Streaming uses exported key + XChaCha20-Poly1305.
 - AAD is the single source of truth for all x402 + app metadata. Payload is opaque by default.
 - Optional public sidecar is a projection of AAD; server enforces byte-for-byte equivalence.
