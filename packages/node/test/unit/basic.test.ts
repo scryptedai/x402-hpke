@@ -1,0 +1,43 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createHpke, generateKeyPair } from "../../src/index.js";
+
+await test("seal/open roundtrip", async () => {
+  const hpke = createHpke({ namespace: "myapp" });
+  const { publicJwk, privateJwk } = await generateKeyPair();
+  const x402 = {
+    invoiceId: "inv_1",
+    chainId: 8453,
+    tokenContract: "0x" + "a".repeat(40),
+    amount: "1000",
+    recipient: "0x" + "b".repeat(40),
+    txHash: "0x" + "c".repeat(64),
+    expiry: 9999999999,
+    priceHash: "0x" + "d".repeat(64),
+  };
+  const payload = new TextEncoder().encode("hello");
+  const { envelope } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402 });
+  const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kid1" });
+  assert.equal(new TextDecoder().decode(opened.plaintext), "hello");
+  assert.equal(opened.x402.invoiceId, x402.invoiceId);
+});
+
+await test("header sidecar AAD equivalence", async () => {
+  const hpke = createHpke({ namespace: "myapp" });
+  const { publicJwk, privateJwk } = await generateKeyPair();
+  const x402 = {
+    invoiceId: "inv_2",
+    chainId: 8453,
+    tokenContract: "0x" + "a".repeat(40),
+    amount: "2000",
+    recipient: "0x" + "b".repeat(40),
+    txHash: "0x" + "c".repeat(64),
+    expiry: 9999999900,
+    priceHash: "0x" + "d".repeat(64),
+  };
+  const payload = new TextEncoder().encode("bye");
+  const { envelope, publicHeaders } = await hpke.seal({ kid: "kid1", recipientPublicJwk: publicJwk, plaintext: payload, x402, public: { x402Headers: true, as: "headers" } });
+  assert.ok(publicHeaders);
+  const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kid1", publicHeaders });
+  assert.equal(new TextDecoder().decode(opened.plaintext), "bye");
+});

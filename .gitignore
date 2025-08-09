@@ -1,0 +1,59 @@
+# General
+.DS_Store
+Thumbs.db
+
+# Editors/IDE
+.vscode/
+*.code-workspace
+.idea/
+*.iml
+.cursor/
+
+# Node
+node_modules/
+packages/node/node_modules/
+packages/node/dist/
+packages/node/coverage/
+packages/node/.nyc_output/
+packages/node/.eslintcache
+packages/node/package-lock.json
+
+# Python / Poetry
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.venv/
+.venv*/
+.env
+.env*/
+.pytest_cache/
+.mypy_cache/
+coverage.xml
+htmlcov/
+
+# Poetry build artifacts
+packages/python/dist/
+packages/python/build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/Tooling
+.cache/
+.tmp/
+
+# Examples temp/build
+examples/**/node_modules/
+examples/**/.venv/
+examples/**/dist/
+
+# Misc
+*.swp
+*.swo

@@ -1,0 +1,22 @@
+{
+  "name": "@x402-hpke/node",
+  "version": "0.1.0",
+  "description": "Provider-agnostic HPKE envelope library for x402 (Node)",
+  "author": "Tim Cotten <tcotten@scrypted.ai>",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test"
+  },
+  "dependencies": {
+    "libsodium-wrappers": "^0.7.13"
+  },
+  "devDependencies": {
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

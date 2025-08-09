@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "x402-hpke-monorepo"
+version = "0.1.0"
+description = "Monorepo control for x402-hpke (Poetry-driven orchestration)"
+authors = ["Scrypted Team <dev@scrypted.ai>"]
+packages = []
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.32.3"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.2"
+
+[tool.poetry.scripts]
+node-build = "tools.npm_runner:build"
+node-test = "tools.npm_runner:test"
+node-publish = "tools.npm_runner:publish"
+python-test = "tools.py_runner:test"
+python-build = "tools.py_runner:build"
+python-publish = "tools.py_runner:publish"
+interop = "tools.py_runner:interop"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
