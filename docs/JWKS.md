@@ -3,7 +3,7 @@
 - Keys are OKP X25519 JWKs with `kty=OKP`, `crv=X25519`, `x` (and `d` for private). Optional `use` should be `enc`.
 - `kid` is required and used for recipient selection.
 - HTTPS-only fetch; responses must be JSON with a `keys` array.
-- Caching: honor `Cache-Control` `max-age`/`s-maxage` and `Expires` headers; clamp TTL (time-to-live) to safe bounds.
+- Caching: honor `Cache-Control` `max-age`/`s-maxage` and `Expires` headers; clamp TTL to safe bounds.
 - Selection: choose key where `kid` matches exactly; error if not found.
 
 Language APIs

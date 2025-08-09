@@ -10,7 +10,7 @@
 
 Parser requirements (normative)
 - Header name matching is case-insensitive.
-- Trim optional whitespace (OWS, optional whitespace) on values prior to AAD rebuild.
+- Trim optional whitespace (OWS) on values prior to AAD rebuild.
 
 ## Header names
 

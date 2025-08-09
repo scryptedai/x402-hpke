@@ -4,7 +4,7 @@
 - Normalize hex to lowercase, ensure 0x prefix where specified.
 - `amount` is a base-10 uint256 string, no leading zeros (except "0").
 - Integers only for numeric fields.
-- AAD bytes = UTF-8 bytes of the string "<ns>|v1|" + json(x402) + "|" + json(app?).
+- AAD bytes = utf-8 bytes of the string "<ns>|v1|" + json(x402) + "|" + json(app?).
 
 Encoding (normative)
 - JSON canonicalization: UTF-8; keys sorted lexicographically; compact separators (no spaces).
