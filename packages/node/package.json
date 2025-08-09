@@ -7,12 +7,19 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "sideEffects": false,
   "engines": {
     "node": ">=22.12"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": { "access": "public", "tag": "next", "provenance": true },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scryptedai/x402-hpke.git"
@@ -31,7 +38,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "tsx --test"
+    "test": "tsx --test",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "libsodium-wrappers": "^0.7.13"
