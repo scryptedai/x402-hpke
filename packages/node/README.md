@@ -69,5 +69,5 @@ const pt = await openChunkXChaCha(key, prefix16, 0, ct);
 
 ## Notes
 
-- AEAD is pinned to XChaCha20-Poly1305 for v1. AES-GCM is not supported.
+- AEAD is pinned to ChaCha20-Poly1305 for v1 (envelope). Streaming uses XChaCha20-Poly1305. AES-256-GCM may be offered in the future as an optional profile; suite remains pinned per version.
 - ESM only.
