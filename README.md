@@ -5,7 +5,7 @@ Provider-agnostic HPKE envelope library for x402 — Node (TypeScript) and Pytho
 - Packages:
   - Node: `@x402-hpke/node`
   - Python: `x402-hpke`
-- Default AEAD: ChaCha20-Poly1305 (RFC 9180). Streaming: exported key + XChaCha20-Poly1305 (docs only in v1).
+- Pinned ciphersuite (v1): X25519 / HKDF-SHA256 / ChaCha20-Poly1305 (envelope). Streaming uses exported key + XChaCha20-Poly1305.
 - AAD is the single source of truth for all x402 + app metadata. Payload is opaque by default.
 - Optional public sidecar is a projection of AAD; server enforces byte-for-byte equivalence.
 
@@ -13,17 +13,38 @@ License: MIT © 2025 Tim Cotten <tcotten@scrypted.ai>, Scrypted Inc.
 
 ## Install
 
-Node:
+Node (>= 22.12):
 ```bash
 cd packages/node
 npm install
 npm run build
 ```
 
-Python:
+Python (>= 3.12):
 ```bash
 cd packages/python
 poetry install
+```
+
+## Monorepo build/test (from repo root)
+
+Use Poetry scripts to build and test both packages from the root:
+
+```bash
+# Build Python env and Node dist
+poetry run build-all
+
+# Run Node tests only
+poetry run test-node
+
+# Run Python tests only
+poetry run test-python
+
+# Run Node tests then Python tests
+poetry run test-all
+
+# CI-style: prepare Python, build Node, run Node tests, then Python tests
+poetry run ci
 ```
 
 ## Quickstart (Node)
@@ -132,6 +153,10 @@ Notes for running examples:
   poetry run pytest -q
   ```
 - Interop: Node suite includes Node→Python and Python→Node tests (invokes Poetry).
+ - From root, you can also run:
+   ```bash
+   poetry run test-all
+   ```
 
 ## CI
 - See `.github/workflows/ci.yml`. Matrix for Node and Python. Interop test step can be added to run in CI.

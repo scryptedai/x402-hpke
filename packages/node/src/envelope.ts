@@ -16,12 +16,14 @@ function hkdfSha256(ikm: Uint8Array, info: Uint8Array, length: number): Uint8Arr
   const salt = new Uint8Array(32); // zeros
   const prk = createHmac("sha256", Buffer.from(salt)).update(Buffer.from(ikm)).digest();
   const n = Math.ceil(length / 32);
-  let t = Buffer.alloc(0);
-  let okm = Buffer.alloc(0);
+  let t: Buffer = Buffer.alloc(0);
+  let okm: Buffer = Buffer.alloc(0);
   for (let i = 1; i <= n; i++) {
     const h = createHmac("sha256", prk).update(Buffer.concat([t, Buffer.from(info), Buffer.from([i])])).digest();
-    t = h;
-    okm = Buffer.concat([okm, h]);
+    // Normalize Buffer generic types by re-wrapping
+    const hb = Buffer.from(h);
+    t = hb;
+    okm = Buffer.concat([okm, hb]);
   }
   return new Uint8Array(okm.slice(0, length));
 }
@@ -40,7 +42,7 @@ export type Envelope = {
   kid: string;
   kem: "X25519";
   kdf: "HKDF-SHA256";
-  aead: "CHACHA20-POLY1305" | "AES-256-GCM";
+  aead: "CHACHA20-POLY1305";
   enc: string; // b64url eph public key
   aad: string; // b64url canonical AAD bytes
   ct: string; // b64url ciphertext with tag
@@ -50,7 +52,7 @@ export async function seal(args: {
   namespace: string;
   kem: "X25519";
   kdf: "HKDF-SHA256";
-  aead: "CHACHA20-POLY1305" | "AES-256-GCM";
+  aead: "CHACHA20-POLY1305";
   kid: string;
   recipientPublicJwk: OkpJwk;
   plaintext: Uint8Array;
@@ -83,11 +85,11 @@ export async function seal(args: {
   }
 
   const info = new TextEncoder().encode(`${namespace}:v1|${b64u(eph.publicKey)}|${b64u(recipientPub)}`);
-  const okm = hkdfSha256(shared, info, 32 + 24);
+  const okm = hkdfSha256(shared, info, 32 + 12);
   const key = okm.slice(0, 32);
   const nonce = okm.slice(32);
 
-  const ct = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, aadBytes, null, nonce, key);
+  const ct = sodium.crypto_aead_chacha20poly1305_ietf_encrypt(plaintext, aadBytes, null, nonce, key);
 
   const envelope: Envelope = {
     typ: "hpke-envelope",
@@ -133,7 +135,7 @@ export async function open(args: {
   namespace: string;
   kem: "X25519";
   kdf: "HKDF-SHA256";
-  aead: "CHACHA20-POLY1305" | "AES-256-GCM";
+  aead: "CHACHA20-POLY1305";
   expectedKid?: string;
   recipientPrivateJwk: OkpJwk;
   envelope: Envelope;
@@ -188,12 +190,12 @@ export async function open(args: {
 
   const pkR = sodium.crypto_scalarmult_base(sk);
   const info = new TextEncoder().encode(`${namespace}:v1|${envelope.enc}|${b64u(pkR)}`);
-  const okm = hkdfSha256(shared, info, 32 + 24);
+  const okm = hkdfSha256(shared, info, 32 + 12);
   const key = okm.slice(0, 32);
   const nonce = okm.slice(32);
 
   const ct = b64uToBytes(envelope.ct);
-  const pt = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, ct, aadBytes, nonce, key);
+  const pt = sodium.crypto_aead_chacha20poly1305_ietf_decrypt(null, ct, aadBytes, nonce, key);
 
   const aadStr = Buffer.from(aadBytes).toString("utf8");
   const parts = aadStr.split("|");

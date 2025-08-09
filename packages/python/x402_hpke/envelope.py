@@ -50,9 +50,9 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
             info = (namespace + ":v1").encode("utf-8")
             # Bind KEM context: enc || pkR
             info = (namespace + ":v1|" + _b64u(eph_pub) + "|" + _b64u(recipient_pub)).encode("utf-8")
-            okm = _hkdf_sha256(shared, info, 32 + 24)
+            okm = _hkdf_sha256(shared, info, 32 + 12)
             key, nonce = okm[:32], okm[32:]
-            ct = bindings.crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, aad_bytes, nonce, key)
+            ct = bindings.crypto_aead_chacha20poly1305_ietf_encrypt(plaintext, aad_bytes, nonce, key)
             envelope = {
                 "typ": "hpke-envelope",
                 "ver": "1",
@@ -127,10 +127,10 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
             # Bind KEM context: enc || pkR
             pkR = bindings.crypto_scalarmult_base(sk)
             info = (envelope["ns"] + ":v1|" + envelope["enc"] + "|" + _b64u(pkR)).encode("utf-8")
-            okm = _hkdf_sha256(shared, info, 32 + 24)
+            okm = _hkdf_sha256(shared, info, 32 + 12)
             key, nonce = okm[:32], okm[32:]
             ct = _b64u_to_bytes(envelope["ct"])
-            pt = bindings.crypto_aead_xchacha20poly1305_ietf_decrypt(ct, aad_bytes, nonce, key)
+            pt = bindings.crypto_aead_chacha20poly1305_ietf_decrypt(ct, aad_bytes, nonce, key)
             aad_str = _b64u_to_bytes(envelope["aad"]).decode("utf-8")
             segs = aad_str.split("|")
             if len(segs) < 4:

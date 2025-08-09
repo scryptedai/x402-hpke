@@ -1,6 +1,13 @@
-# Technical Design Document — x402-hpke (updated)
+# Technical Design — x402-hpke (pinned for interop)
 
-- Envelope AEAD default: ChaCha20-Poly1305 (RFC 9180); streaming uses exported key (future XChaCha recommended).
+- Ciphersuite (v1, pinned for maximum interop):
+  - KEM: X25519
+  - KDF: HKDF-SHA256
+  - AEAD (envelope): ChaCha20-Poly1305 (96-bit nonce, libsodium `*_ietf`)
 - AAD is canonical; payload is opaque. Public sidecar is a projection of AAD; mismatch rejected.
-- JWKS: HTTPS-only fetch with cache-control; selection by kid.
-- Interop: Node seals → Python opens and vice versa planned; Node→Python test included.
+- JWKS: HTTPS-only fetch with Cache-Control/Expires; selection by `kid`.
+- Interop: Node seals ↔ Python opens and vice versa. Cross-language tests included.
+
+Notes:
+- We use ChaCha20-Poly1305 for the envelope to align with RFC 9180 (96-bit nonce).
+- Streaming helpers use XChaCha20-Poly1305 for chunking (separate key/nonce prefix), see STREAMING.md.

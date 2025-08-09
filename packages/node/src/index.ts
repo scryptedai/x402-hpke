@@ -1,7 +1,8 @@
 export type Algorithms = {
   kem: "X25519";
   kdf: "HKDF-SHA256";
-  aead: "CHACHA20-POLY1305" | "AES-256-GCM";
+  // Envelope AEAD is pinned to ChaCha20-Poly1305 (RFC 9180) for v1
+  aead: "CHACHA20-POLY1305";
 };
 
 export type CreateHpkeOptions = {
@@ -14,6 +15,8 @@ export type CreateHpkeOptions = {
 
 import { seal, open } from "./envelope.js";
 import { generateKeyPair, selectJwkFromJwks, fetchJwks, setJwks, type Jwks } from "./keys.js";
+import { canonicalAad, buildCanonicalAad, validateX402 } from "./aad.js";
+import { buildX402Headers } from "./headers.js";
 export { canonicalAad, buildCanonicalAad, validateX402 } from "./aad.js";
 export { generateKeyPair, selectJwkFromJwks } from "./keys.js";
 export { buildX402Headers } from "./headers.js";
@@ -38,10 +41,11 @@ export function createHpke(opts: CreateHpkeOptions) {
     generateKeyPair,
     selectJwkFromJwks,
     buildX402Headers: (x: any) => buildX402Headers(x),
-    async fetchJwks(url?: string, opts?: { minTtlMs?: number; maxTtlMs?: number }): Promise<Jwks> {
-      const u = url ?? opts?.["url"] ?? (opts as any)?.url; // tolerate legacy
-      const final = u ?? (opts as any)?.jwksUrl ?? (opts as any)?.url ?? (opts as any) ?? undefined;
-      return fetchJwks(final ?? (opts as any)?.url ?? "");
+    // Simplified JWKS fetch: prefer explicit url, fall back to createHpke(opts).jwksUrl
+    async fetchJwks(url?: string, ttl?: { minTtlMs?: number; maxTtlMs?: number }): Promise<Jwks> {
+      const effectiveUrl = url ?? opts.jwksUrl;
+      if (!effectiveUrl) throw new Error("JWKS_URL_REQUIRED");
+      return fetchJwks(effectiveUrl, ttl);
     },
     setJwks,
   };

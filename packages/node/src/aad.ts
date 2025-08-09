@@ -13,15 +13,11 @@ export type X402Fields = {
 
 const enc = new TextEncoder();
 
-function isHexPrefixedLower(s: string, len?: number) {
-  return /^0x[0-9a-f]+$/.test(s) && (len ? s.length === 2 + len : true);
-}
-
 function normalizeHex(input: string, expectedLen?: number): string {
   if (typeof input !== "string") throw new Error("X402_SCHEMA");
   const s = input.toLowerCase();
   if (!s.startsWith("0x")) throw new Error("X402_SCHEMA");
-  if (!/^[0-9a-fx]+$/.test(s)) throw new Error("X402_SCHEMA");
+  if (!/^0x[0-9a-f]+$/.test(s)) throw new Error("X402_SCHEMA");
   if (expectedLen && s.length !== 2 + expectedLen) throw new Error("X402_SCHEMA");
   return s;
 }
