@@ -12,6 +12,10 @@ Reply-to (required)
   - `replyToJwk` (X25519 OKP public key).
 - `replyTo*` fields are part of AAD and MUST NOT be mirrored in sidecar.
 
+Public reply opt-in (optional)
+- `replyPublicOk: true` in AAD allows the recipient to respond without an envelope (plaintext), if they choose.
+- When omitted or false, recipients MUST reply with an envelope using the supplied reply-to.
+
 Encoding (normative)
 - JSON canonicalization: UTF-8; keys sorted lexicographically; compact separators (no spaces).
 - Base64url without padding for envelope fields `enc`, `aad`, and `ct`.

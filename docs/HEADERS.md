@@ -8,6 +8,7 @@
 - Server must rebuild projection from AAD and compare byte-for-byte. Mismatch → `400 AAD_MISMATCH`.
 - Sidecar keys must be present in AAD; attempts to expose missing keys → `400 PUBLIC_KEY_NOT_IN_AAD`.
 - Reply-to fields MUST NOT be mirrored to sidecar (e.g., `replyToJwks`, `replyToKid`, `replyToJwk`).
+- `replyPublicOk` MUST NOT be mirrored to sidecar.
 
 Parser requirements (normative)
 - Header name matching is case-insensitive.

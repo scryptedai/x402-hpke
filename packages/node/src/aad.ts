@@ -46,6 +46,7 @@ export function validateX402(x: any): X402Fields {
     replyToJwks: x.replyToJwks ? String(x.replyToJwks) : undefined,
     replyToKid: x.replyToKid ? String(x.replyToKid) : undefined,
     replyToJwk: x.replyToJwk,
+    replyPublicOk: typeof x.replyPublicOk === "boolean" ? x.replyPublicOk : undefined,
   };
   if (!v.invoiceId || !Number.isInteger(v.chainId) || !Number.isInteger(v.expiry)) {
     throw new Error("X402_SCHEMA");
