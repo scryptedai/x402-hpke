@@ -1,14 +1,25 @@
 [tool.poetry]
 name = "x402-hpke"
-version = "0.1.0"
-description = "Provider-agnostic HPKE envelope library for x402 (Python)"
+version = "0.1.0a1"
+description = "Provider-agnostic HPKE envelope library for x402"
 authors = ["Tim Cotten <tcotten@scrypted.ai>"]
 license = "MIT"
 readme = "README.md"
 packages = [{ include = "x402_hpke" }]
+homepage = "https://scrypted.ai"
+repository = "https://github.com/<org>/<repo>"
+documentation = "https://github.com/<org>/<repo>/tree/main/docs"
+keywords = ["hpke", "aead", "x25519", "jwks", "envelope"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Development Status :: 3 - Alpha",
+  "Topic :: Security :: Cryptography",
+]
 
 [tool.poetry.dependencies]
-python = ">=3.12,<4.0"
+python = ">=3.12"
 PyNaCl = "^1.5.0"
 requests = "^2.32.3"
 
