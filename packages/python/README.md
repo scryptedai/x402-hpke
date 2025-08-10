@@ -22,25 +22,27 @@ hpke = create_hpke(namespace="myapp")
 pub, priv = generate_keypair()
 
 x402 = {
-    "invoiceId": "inv_1",
-    "chainId": 8453,
-    "tokenContract": "0x" + "a"*40,
-    "amount": "1000",
-    "recipient": "0x" + "b"*40,
-    "txHash": "0x" + "c"*64,
-    "expiry": 9999999999,
-    "priceHash": "0x" + "d"*64,
+    "header": "X-Payment",
+    "payload": {
+        "invoiceId": "inv_1",
+        "chainId": 8453,
+        "tokenContract": "0x" + "a"*40,
+        "amount": "1000",
+        "recipient": "0x" + "b"*40,
+        "txHash": "0x" + "c"*64,
+        "expiry": 9999999999,
+        "priceHash": "0x" + "d"*64,
+    }
 }
 
 envelope, headers = hpke.seal(
     kid="kid1",
     recipient_public_jwk=pub,
-    plaintext=b"hello",
     x402=x402,
-    public={"x402Headers": True},
+    public={"makeEntitiesPublic": ["X-PAYMENT"], "as": "headers"},
 )
 
-pt, xnorm, app = hpke.open(
+pt, xnorm, request, response, ext = hpke.open(
     recipient_private_jwk=priv,
     envelope=envelope,
     expected_kid="kid1",

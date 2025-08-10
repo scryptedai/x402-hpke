@@ -15,13 +15,11 @@ def test_create_payment_required_private():
     hpke = create_hpke(namespace="myapp")
     pub, priv = generate_keypair()
     payment_required_data = {"cost": "1000", "currency": "USD"}
-    plaintext = b"hello"
 
     env, body = create_payment_required(
         hpke,
         payment_required_data=payment_required_data,
         recipient_public_jwk=pub,
-        plaintext=plaintext,
         kid="server-key-1",
     )
     assert env is not None
@@ -31,7 +29,8 @@ def test_create_payment_required_private():
         envelope=env,
         expected_kid="server-key-1",
     )
-    assert pt == plaintext
+    expected_plaintext = json.dumps(payment_required_data).encode("utf-8")
+    assert pt == expected_plaintext
     assert response == payment_required_data
 
 
@@ -39,13 +38,11 @@ def test_create_payment_required_public():
     hpke = create_hpke(namespace="myapp")
     pub, priv = generate_keypair()
     payment_required_data = {"cost": "1000", "currency": "USD"}
-    plaintext = b"hello"
 
     env, body = create_payment_required(
         hpke,
         payment_required_data=payment_required_data,
         recipient_public_jwk=pub,
-        plaintext=plaintext,
         kid="server-key-1",
         is_public=True,
     )
@@ -58,7 +55,8 @@ def test_create_payment_required_public():
         envelope=env,
         expected_kid="server-key-1",
     )
-    assert pt == plaintext
+    expected_plaintext = json.dumps(payment_required_data).encode("utf-8")
+    assert pt == expected_plaintext
     assert response == payment_required_data
 
 
@@ -81,7 +79,8 @@ def test_create_payment():
         envelope=env,
         expected_kid="server-key-1",
     )
-    assert len(pt) == 0
+    expected_plaintext = json.dumps({"header": "X-Payment", "payload": payment_data}).encode("utf-8")
+    assert pt == expected_plaintext
     assert x402["payload"] == payment_data
 
     # Public
@@ -99,24 +98,22 @@ def test_create_payment():
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
-        public_headers=headers,
     )
-    assert len(pt) == 0
+    expected_plaintext = json.dumps({"header": "X-Payment", "payload": payment_data}).encode("utf-8")
+    assert pt == expected_plaintext
     assert x402["payload"] == payment_data
 
 
 def test_create_payment_response():
     hpke = create_hpke(namespace="myapp")
     pub, priv = generate_keypair()
-    settlement_data = {"receipt": "receipt_123"}
-    plaintext = b"here is your data"
+    settlement_data = {"settlementId": "settle_123"}
 
     # Private by default
     env, headers = create_payment_response(
         hpke,
         settlement_data=settlement_data,
         recipient_public_jwk=pub,
-        plaintext=plaintext,
         kid="server-key-1",
     )
     assert env is not None
@@ -126,7 +123,8 @@ def test_create_payment_response():
         envelope=env,
         expected_kid="server-key-1",
     )
-    assert pt == plaintext
+    expected_plaintext = json.dumps({"header": "X-Payment-Response", "payload": settlement_data}).encode("utf-8")
+    assert pt == expected_plaintext
     assert x402["payload"] == settlement_data
 
     # Public
@@ -134,7 +132,6 @@ def test_create_payment_response():
         hpke,
         settlement_data=settlement_data,
         recipient_public_jwk=pub,
-        plaintext=plaintext,
         kid="server-key-1",
         is_public=True,
     )
@@ -145,143 +142,97 @@ def test_create_payment_response():
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
-        public_headers=headers,
     )
-    assert pt == plaintext
+    expected_plaintext = json.dumps({"header": "X-Payment-Response", "payload": settlement_data}).encode("utf-8")
+    assert pt == expected_plaintext
     assert x402["payload"] == settlement_data
 
 
 def test_create_request():
     hpke = create_hpke(namespace="myapp")
     pub, priv = generate_keypair()
-    request_data = {"action": "get_data", "resource": "/api/users"}
+    request_data = {"action": "getData", "params": {"id": 123}}
 
     # Private by default
-    env, body = create_request(
+    env, headers = create_request(
         hpke,
         request_data=request_data,
         recipient_public_jwk=pub,
-        kid="client-key-1",
+        kid="server-key-1",
     )
     assert env is not None
-    assert body is None
+    assert headers is None
     pt, request, _ = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
-        expected_kid="client-key-1",
+        expected_kid="server-key-1",
     )
-    decoded_request = json.loads(pt.decode("utf-8"))
-    assert decoded_request == request_data
+    expected_plaintext = json.dumps(request_data).encode("utf-8")
+    assert pt == expected_plaintext
+    assert request == request_data
 
     # Public
-    env, body = create_request(
+    env, headers = create_request(
         hpke,
         request_data=request_data,
         recipient_public_jwk=pub,
-        kid="client-key-1",
+        kid="server-key-1",
         is_public=True,
     )
     assert env is not None
-    assert body == request_data
+    assert headers is not None
+    assert "request" in {k.lower() for k in headers.keys()}
     pt, request, _ = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
-        expected_kid="client-key-1",
-        public_json_body=body,
+        expected_kid="server-key-1",
     )
-    decoded_request = json.loads(pt.decode("utf-8"))
-    assert decoded_request == request_data
-
-    # With extensions
-    extensions = [{"header": "X-Custom", "payload": {"custom": "value"}}]
-    from x402_hpke.extensions import APPROVED_EXTENSION_HEADERS
-    APPROVED_EXTENSION_HEADERS.append("x-custom")
-    env, body = create_request(
-        hpke,
-        request_data=request_data,
-        recipient_public_jwk=pub,
-        kid="client-key-1",
-        extensions=extensions,
-        is_public=True,
-    )
-    assert env is not None
-    assert body == request_data
-
-    pt, request, ext = hpke.open(
-        recipient_private_jwk=priv,
-        envelope=env,
-        expected_kid="client-key-1",
-        public_json_body=body,
-    )
-    decoded_request = json.loads(pt.decode("utf-8"))
-    assert decoded_request == request_data
-    assert ext[0]["header"].lower() == extensions[0]["header"].lower()
-    assert ext[0]["payload"] == extensions[0]["payload"]
-    APPROVED_EXTENSION_HEADERS.pop()
+    expected_plaintext = json.dumps(request_data).encode("utf-8")
+    assert pt == expected_plaintext
+    assert request == request_data
 
 
 def test_create_response():
     hpke = create_hpke(namespace="myapp")
     pub, priv = generate_keypair()
-    response_data = {"status": "success", "data": {"id": 123, "name": "test"}}
-    plaintext = b"response data"
+    response_data = {"status": "success", "data": {"result": "ok"}}
 
     # Private by default
-    env, body = create_response(
+    env, headers = create_response(
         hpke,
         response_data=response_data,
         recipient_public_jwk=pub,
-        plaintext=plaintext,
         http_response_code=200,
         kid="server-key-1",
     )
     assert env is not None
-    assert body is None
-
+    assert headers is None
     pt, response, _ = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
     )
-    assert pt == plaintext
+    expected_plaintext = json.dumps(response_data).encode("utf-8")
+    assert pt == expected_plaintext
     assert response == response_data
 
     # Public
-    env, body = create_response(
+    env, headers = create_response(
         hpke,
         response_data=response_data,
         recipient_public_jwk=pub,
-        plaintext=plaintext,
         http_response_code=200,
         kid="server-key-1",
         is_public=True,
     )
     assert env is not None
-    assert body == response_data
-
-    pt, response, _ = hpke.open(
-        recipient_private_jwk=priv,
-        envelope=env,
-        expected_kid="server-key-1",
-        public_json_body=body,
-    )
-    assert pt == plaintext
-    assert response == response_data
-
-    # Works with different http response codes
-    env, _ = create_response(
-        hpke,
-        response_data=response_data,
-        recipient_public_jwk=pub,
-        plaintext=plaintext,
-        http_response_code=201,
-        kid="server-key-1",
-    )
-    assert env is not None
-
+    assert headers is not None
+    assert "response" in {k.lower() for k in headers.keys()}
     pt, response, _ = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
     )
+    expected_plaintext = json.dumps(response_data).encode("utf-8")
+    assert pt == expected_plaintext
     assert response == response_data

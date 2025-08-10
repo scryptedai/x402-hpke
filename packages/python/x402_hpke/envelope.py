@@ -57,7 +57,7 @@ def create_hpke(
         version = "v1"
         _default_public = public_entities
         
-        def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, request: Optional[Dict] = None, response: Optional[Dict] = None, x402: Optional[Dict] = None, extensions: Optional[list] = None, public: Optional[Dict] = None, http_response_code: Optional[int] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
+        def seal(self, *, kid: str, recipient_public_jwk: Dict, request: Optional[Dict] = None, response: Optional[Dict] = None, x402: Optional[Dict] = None, extensions: Optional[list] = None, public: Optional[Dict] = None, http_response_code: Optional[int] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
             # Rule 1: Mutually Exclusive Payloads
             payload_count = sum(p is not None for p in [request, response, x402])
             if payload_count > 1:
@@ -89,6 +89,18 @@ def create_hpke(
             
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
+            
+            # Automatically determine what to encrypt based on the payload type
+            import json
+            if request:
+                plaintext = json.dumps(request).encode("utf-8")
+            elif response:
+                plaintext = json.dumps(response).encode("utf-8")
+            elif x402:
+                plaintext = json.dumps(x402).encode("utf-8")
+            else:
+                # This should never happen due to the validation above, but Python needs this
+                plaintext = b""
             
             aad_bytes, xnorm, request_norm, response_norm, ext_norm = build_canonical_aad(namespace, {"request": request, "response": response, "x402": x402}, extensions)
             eph_skpk = (
@@ -156,100 +168,124 @@ def create_hpke(
             if http_response_code == 402:
                 # Only emit approved extensions if explicitly requested
                 make_pub_in = (public or {}).get("makeEntitiesPublic")
-                ext_allow: list[str] = []
+                ext_allow = []
                 if isinstance(make_pub_in, str) and make_pub_in.lower() in ("all", "*"):
-                    if app and isinstance(app.get("extensions"), list):
-                        ext_allow = [str(e.get("header")) for e in app["extensions"] if is_approved_extension_header(str(e.get("header")))]
+                    if ext_norm and isinstance(ext_norm, list):
+                        ext_allow = [str(e.get("header", "")) for e in ext_norm if self._is_approved_extension_header(str(e.get("header", "")))]
                 elif isinstance(make_pub_in, list):
                     # For 402, only process approved extension headers, ignore core payment headers
-                    ext_allow = [x for x in make_pub_in if is_approved_extension_header(x)]
+                    ext_allow = [h for h in make_pub_in if self._is_approved_extension_header(h)]
                 
                 # Apply makeEntitiesPrivate filter
                 make_priv = (public or {}).get("makeEntitiesPrivate")
-                if isinstance(make_priv, list) and len(ext_allow) > 0:
-                    privset = set(x.upper() for x in make_priv)
-                    ext_allow = [h for h in ext_allow if h.upper() not in privset]
+                if isinstance(make_priv, list):
+                    priv_set = {str(s).upper() for s in make_priv}
+                    ext_allow = [h for h in ext_allow if str(h).upper() not in priv_set]
                 
                 # 402 responses only emit extensions, never core payment headers
-                if len(ext_allow) == 0:
+                if not ext_allow:
                     return envelope, None
                 
                 if as_kind == "headers":
-                    hdrs: Dict[str, str] = {}
-                    if ext_allow and app and isinstance(app.get("extensions"), list):
+                    headers = {}
+                    if ext_allow and ext_norm and isinstance(ext_norm, list):
                         for wanted in ext_allow:
-                            if not is_approved_extension_header(wanted):
+                            if not self._is_approved_extension_header(wanted):
                                 continue
-                            found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                            found = next((e for e in ext_norm if str(e.get("header", "")).lower() == wanted.lower()), None)
                             if not found:
                                 raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
-                            hdrs[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
-                    return envelope, hdrs
+                            headers[found["header"]] = self._synthesize_payment_header_value(found["payload"])
+                    return envelope, headers
                 else:
-                    j: Dict[str, str] = {}
-                    if ext_allow and app and isinstance(app.get("extensions"), list):
+                    json_data = {}
+                    if ext_allow and ext_norm and isinstance(ext_norm, list):
                         for wanted in ext_allow:
-                            if not is_approved_extension_header(wanted):
+                            if not self._is_approved_extension_header(wanted):
                                 continue
-                            found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                            found = next((e for e in ext_norm if str(e.get("header", "")).lower() == wanted.lower()), None)
                             if not found:
                                 raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
-                            j[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
-                    return envelope, j
-            
-            # For non-402 responses (including client requests), handle normal sidecar logic
-            # Determine entities to emit via makeEntitiesPublic
-            make_pub_in = (public or {}).get("makeEntitiesPublic")
-            reveal_payment = False
-            ext_allow: list[str] = []
-            if isinstance(make_pub_in, str) and make_pub_in.lower() in ("all", "*"):
-                reveal_payment = True
-                if app and isinstance(app.get("extensions"), list):
-                    ext_allow = [str(e.get("header")) for e in app["extensions"] if is_approved_extension_header(str(e.get("header")))]
-            elif isinstance(make_pub_in, list):
-                lst = [str(x) for x in make_pub_in]
-                reveal_payment = any(x.upper() in ("X-PAYMENT", "X-PAYMENT-RESPONSE") for x in lst)
-                ext_allow = [x for x in lst if is_approved_extension_header(x)]
-            # Apply makeEntitiesPrivate subtraction
-            make_priv = (public or {}).get("makeEntitiesPrivate")
-            if isinstance(make_priv, list) and len(ext_allow) > 0:
-                privset = set(x.upper() for x in make_priv)
-                ext_allow = [h for h in ext_allow if h.upper() not in privset]
-                if reveal_payment:
-                    if "X-PAYMENT" in privset and str(xnorm.get("header")) == "X-Payment":
-                        reveal_payment = False
-                    if "X-PAYMENT-RESPONSE" in privset and str(xnorm.get("header")) == "X-Payment-Response":
-                        reveal_payment = False
-            if not reveal_payment and len(ext_allow) == 0:
-                return envelope, None
+                            json_data[found["header"]] = self._synthesize_payment_header_value(found["payload"])
+                    return envelope, json_data
+
+            # For non-402 responses and client requests, can emit both payment headers and extensions
             if as_kind == "headers":
-                hdrs: Dict[str, str] = {}
-                if reveal_payment:
-                    h = "X-PAYMENT" if str(xnorm.get("header", "")).lower() == "x-payment" else "X-PAYMENT-RESPONSE"
-                    hdrs[h] = synthesize_payment_header_value(xnorm.get("payload", {}))
-                if ext_allow and app and isinstance(app.get("extensions"), list):
+                headers = {}
+                
+                # Emit x402 headers if requested and available
+                if x402 and (public or {}).get("makeEntitiesPublic"):
+                    make_pub = (public or {}).get("makeEntitiesPublic")
+                    if (isinstance(make_pub, str) and make_pub.lower() in ("all", "*")) or (isinstance(make_pub, list) and "X-PAYMENT" in make_pub):
+                        if x402.get("header") == "X-Payment":
+                            headers["X-Payment"] = self._synthesize_payment_header_value(x402["payload"])
+                        elif x402.get("header") == "X-Payment-Response":
+                            headers["X-Payment-Response"] = self._synthesize_payment_header_value(x402["payload"])
+                
+                # Emit extension headers if requested and available
+                if ext_norm and isinstance(ext_norm, list) and (public or {}).get("makeEntitiesPublic"):
+                    make_pub = (public or {}).get("makeEntitiesPublic")
+                    ext_allow = []
+                    if isinstance(make_pub, str) and make_pub.lower() in ("all", "*"):
+                        ext_allow = [str(e.get("header", "")) for e in ext_norm if self._is_approved_extension_header(str(e.get("header", "")))]
+                    elif isinstance(make_pub, list):
+                        ext_allow = [h for h in make_pub if self._is_approved_extension_header(h)]
+                    
+                    # Apply makeEntitiesPrivate filter
+                    make_priv = (public or {}).get("makeEntitiesPrivate")
+                    if isinstance(make_priv, list):
+                        priv_set = {str(s).upper() for s in make_priv}
+                        ext_allow = [h for h in ext_allow if str(h).upper() not in priv_set]
+                    
                     for wanted in ext_allow:
-                        if not is_approved_extension_header(wanted):
+                        if not self._is_approved_extension_header(wanted):
                             continue
-                        found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                        found = next((e for e in ext_norm if str(e.get("header", "")).lower() == wanted.lower()), None)
                         if not found:
                             raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
-                        hdrs[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
-                return envelope, hdrs
+                        headers[found["header"]] = self._synthesize_payment_header_value(found["payload"])
+                
+                if headers:
+                    return envelope, headers
             else:
-                j: Dict[str, str] = {}
-                if reveal_payment:
-                    h = "X-PAYMENT" if str(xnorm.get("header", "")).lower() == "x-payment" else "X-PAYMENT-RESPONSE"
-                    j[h] = synthesize_payment_header_value(xnorm.get("payload", {}))
-                if ext_allow and app and isinstance(app.get("extensions"), list):
+                json_data = {}
+                
+                # Emit x402 headers if requested and available
+                if x402 and (public or {}).get("makeEntitiesPublic"):
+                    make_pub = (public or {}).get("makeEntitiesPublic")
+                    if (isinstance(make_pub, str) and make_pub.lower() in ("all", "*")) or (isinstance(make_pub, list) and "X-PAYMENT" in make_pub):
+                        if x402.get("header") == "X-Payment":
+                            json_data["X-Payment"] = self._synthesize_payment_header_value(x402["payload"])
+                        elif x402.get("header") == "X-Payment-Response":
+                            json_data["X-Payment-Response"] = self._synthesize_payment_header_value(x402["payload"])
+                
+                # Emit extension headers if requested and available
+                if ext_norm and isinstance(ext_norm, list) and (public or {}).get("makeEntitiesPublic"):
+                    make_pub = (public or {}).get("makeEntitiesPublic")
+                    ext_allow = []
+                    if isinstance(make_pub, str) and make_pub.lower() in ("all", "*"):
+                        ext_allow = [str(e.get("header", "")) for e in ext_norm if self._is_approved_extension_header(str(e.get("header", "")))]
+                    elif isinstance(make_pub, list):
+                        ext_allow = [h for h in make_pub if self._is_approved_extension_header(h)]
+                    
+                    # Apply makeEntitiesPrivate filter
+                    make_priv = (public or {}).get("makeEntitiesPrivate")
+                    if isinstance(make_priv, list):
+                        priv_set = {str(s).upper() for s in make_priv}
+                        ext_allow = [h for h in ext_allow if str(h).upper() not in priv_set]
+                    
                     for wanted in ext_allow:
-                        if not is_approved_extension_header(wanted):
+                        if not self._is_approved_extension_header(wanted):
                             continue
-                        found = next((e for e in app["extensions"] if str(e.get("header", "")).lower() == str(wanted).lower()), None)
+                        found = next((e for e in ext_norm if str(e.get("header", "")).lower() == wanted.lower()), None)
                         if not found:
                             raise PublicKeyNotInAad("PUBLIC_KEY_NOT_IN_AAD")
-                        j[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
-                return envelope, j
+                        json_data[found["header"]] = self._synthesize_payment_header_value(found["payload"])
+                
+                if json_data:
+                    return envelope, json_data
+            
+            return envelope, None
 
         def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None, public_json_body: Optional[Dict] = None) -> Tuple[bytes, Optional[Dict], Optional[Dict], Optional[Dict], Optional[list]]:
             if envelope.get("ver") != "1" or envelope.get("ns", "").lower() == "x402":

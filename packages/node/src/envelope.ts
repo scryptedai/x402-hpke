@@ -69,7 +69,6 @@ export async function seal(args: {
   aead: "CHACHA20-POLY1305";
   kid: string;
   recipientPublicJwk: OkpJwk;
-  plaintext: Uint8Array;
   request?: Record<string, any>;
   response?: Record<string, any>;
   x402?: X402Core;
@@ -99,7 +98,6 @@ export async function seal(args: {
     aead, 
     kid, 
     recipientPublicJwk, 
-    plaintext, 
     request, 
     response, 
     x402, 
@@ -152,9 +150,20 @@ export async function seal(args: {
   if (aead !== "CHACHA20-POLY1305") {
     throw new AeadUnsupportedError("AEAD_UNSUPPORTED");
   }
-  if ((plaintext as any) && typeof plaintext === 'object') {
-    // guardrail: if caller mistakenly includes x402/app keys in plaintext object, reject in v1 (payload must be opaque bytes)
+
+  // Automatically determine what to encrypt based on the payload type
+  let plaintext: Uint8Array;
+  if (request) {
+    plaintext = new TextEncoder().encode(JSON.stringify(request));
+  } else if (response) {
+    plaintext = new TextEncoder().encode(JSON.stringify(response));
+  } else if (x402) {
+    plaintext = new TextEncoder().encode(JSON.stringify(x402));
+  } else {
+    // This should never happen due to the validation above, but TypeScript needs this
+    plaintext = new Uint8Array();
   }
+
   const { aadBytes, x402Normalized, appNormalized, extensionsNormalized } = buildCanonicalAad(
     namespace, 
     { request, response, x402 },
@@ -265,46 +274,43 @@ export async function seal(args: {
       return { envelope, publicJson: json };
     }
   }
-  
-  // For non-402 responses (including client requests), handle normal sidecar logic
-  // Compute which extensions to emit
-  let extAllow: string[] = [];
-  const makePubGeneral = args.public?.makeEntitiesPublic;
-  if (makePubGeneral === "all" || makePubGeneral === "*") {
-    if (extensionsNormalized && Array.isArray(extensionsNormalized)) {
-      extAllow = extensionsNormalized
-        .map((e: any) => String(e.header))
-        .filter((h: string) => isApprovedExtensionHeader(h));
-    }
-  } else if (Array.isArray(makePubGeneral)) {
-    extAllow = makePubGeneral.slice();
-  }
-  
-  // Decide if core payment header should be emitted via makePublic
-  let wantPayment = Array.isArray(makePubGeneral)
-    ? (makePubGeneral as string[]).some((h) => ["X-PAYMENT", "X-PAYMENT-RESPONSE"].includes(String(h).toUpperCase()))
-    : makePubGeneral === "all" || makePubGeneral === "*";
-    
-  // Apply makeEntitiesPrivate subtraction
-  const makePriv = args.public?.makeEntitiesPrivate;
-  if (Array.isArray(makePriv)) {
-    const privSet = new Set(makePriv.map((s) => String(s).toUpperCase()));
-    extAllow = extAllow.filter((h) => !privSet.has(String(h).toUpperCase()));
-    if (wantPayment) {
-      if (privSet.has("X-PAYMENT") && x402Normalized.header === "X-Payment") wantPayment = false;
-      if (privSet.has("X-PAYMENT-RESPONSE") && x402Normalized.header === "X-Payment-Response") wantPayment = false;
-    }
-  }
-  
-  if (!wantPayment && extAllow.length === 0) return { envelope };
-  
+
+  // For non-402 responses and client requests, can emit both payment headers and extensions
   if (as === "headers") {
     const headers: Record<string, string> = {};
-    if (wantPayment) {
-      const h = x402Normalized.header.toUpperCase() === "X-PAYMENT" ? "X-PAYMENT" : "X-PAYMENT-RESPONSE";
-      headers[h] = synthesizePaymentHeaderValue(x402Normalized.payload);
+    
+    // Emit x402 headers if requested and available
+    if (x402 && args.public?.makeEntitiesPublic) {
+      const makePub = args.public.makeEntitiesPublic;
+      if (makePub === "all" || makePub === "*" || (Array.isArray(makePub) && makePub.includes("X-PAYMENT"))) {
+        if (x402.header === "X-Payment") {
+          headers["X-Payment"] = synthesizePaymentHeaderValue(x402.payload);
+        } else if (x402.header === "X-Payment-Response") {
+          headers["X-Payment-Response"] = synthesizePaymentHeaderValue(x402.payload);
+        }
+      }
     }
-    if (extAllow.length > 0 && extensionsNormalized && Array.isArray(extensionsNormalized)) {
+    
+    // Emit extension headers if requested and available
+    if (extensionsNormalized && Array.isArray(extensionsNormalized) && args.public?.makeEntitiesPublic) {
+      const makePub = args.public.makeEntitiesPublic;
+      let extAllow: string[] = [];
+      if (makePub === "all" || makePub === "*") {
+        extAllow = extensionsNormalized
+          .map((e: any) => String(e.header))
+          .filter((h: string) => isApprovedExtensionHeader(h));
+      } else if (Array.isArray(makePub)) {
+        extAllow = makePub
+          .filter((h: string) => isApprovedExtensionHeader(h));
+      }
+      
+      // Apply makeEntitiesPrivate filter
+      const makePriv = args.public?.makeEntitiesPrivate;
+      if (Array.isArray(makePriv)) {
+        const privSet = new Set(makePriv.map((s) => String(s).toUpperCase()));
+        extAllow = extAllow.filter((h) => !privSet.has(String(h).toUpperCase()));
+      }
+      
       for (const wanted of extAllow) {
         if (!isApprovedExtensionHeader(wanted)) continue;
         const found = extensionsNormalized.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
@@ -312,14 +318,45 @@ export async function seal(args: {
         headers[found.header] = synthesizePaymentHeaderValue(found.payload);
       }
     }
-    return { envelope, publicHeaders: headers };
+    
+    if (Object.keys(headers).length > 0) {
+      return { envelope, publicHeaders: headers };
+    }
   } else {
     const json: Record<string, string> = {};
-    if (wantPayment) {
-      const h = x402Normalized.header.toUpperCase() === "X-PAYMENT" ? "X-PAYMENT" : "X-PAYMENT-RESPONSE";
-      json[h] = synthesizePaymentHeaderValue(x402Normalized.payload);
+    
+    // Emit x402 headers if requested and available
+    if (x402 && args.public?.makeEntitiesPublic) {
+      const makePub = args.public.makeEntitiesPublic;
+      if (makePub === "all" || makePub === "*" || (Array.isArray(makePub) && makePub.includes("X-PAYMENT"))) {
+        if (x402.header === "X-Payment") {
+          json["X-Payment"] = synthesizePaymentHeaderValue(x402.payload);
+        } else if (x402.header === "X-Payment-Response") {
+          json["X-Payment-Response"] = synthesizePaymentHeaderValue(x402.payload);
+        }
+      }
     }
-    if (extAllow.length > 0 && extensionsNormalized && Array.isArray(extensionsNormalized)) {
+    
+    // Emit extension headers if requested and available
+    if (extensionsNormalized && Array.isArray(extensionsNormalized) && args.public?.makeEntitiesPublic) {
+      const makePub = args.public.makeEntitiesPublic;
+      let extAllow: string[] = [];
+      if (makePub === "all" || makePub === "*") {
+        extAllow = extensionsNormalized
+          .map((e: any) => String(e.header))
+          .filter((h: string) => isApprovedExtensionHeader(h));
+      } else if (Array.isArray(makePub)) {
+        extAllow = makePub
+          .filter((h: string) => isApprovedExtensionHeader(h));
+      }
+      
+      // Apply makeEntitiesPrivate filter
+      const makePriv = args.public?.makeEntitiesPrivate;
+      if (Array.isArray(makePriv)) {
+        const privSet = new Set(makePriv.map((s) => String(s).toUpperCase()));
+        extAllow = extAllow.filter((h) => !privSet.has(String(h).toUpperCase()));
+      }
+      
       for (const wanted of extAllow) {
         if (!isApprovedExtensionHeader(wanted)) continue;
         const found = extensionsNormalized.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
@@ -327,8 +364,13 @@ export async function seal(args: {
         json[found.header] = synthesizePaymentHeaderValue(found.payload);
       }
     }
-    return { envelope, publicJson: json };
+    
+    if (Object.keys(json).length > 0) {
+      return { envelope, publicJson: json };
+    }
   }
+  
+  return { envelope };
 }
 
 export async function open(args: {

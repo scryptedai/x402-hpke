@@ -14,7 +14,6 @@ export async function createPaymentRequired(
   args: {
     paymentRequiredData: Record<string, any>;
     recipientPublicJwk: OkpJwk;
-    plaintext: Uint8Array;
     kid: string;
   },
   isPublic: boolean = false
@@ -28,7 +27,6 @@ export async function createPaymentRequired(
         }
       : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
-    plaintext: args.plaintext,
     kid: args.kid,
   });
 
@@ -64,7 +62,6 @@ export async function createPayment(
       makeEntitiesPublic: ["X-PAYMENT"]
     } : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
-    plaintext: new Uint8Array(), // Empty plaintext
     kid: args.kid,
     extensions: args.extensions,
   });
@@ -87,7 +84,6 @@ export async function createPaymentResponse(
   args: {
     settlementData: Record<string, any>;
     recipientPublicJwk: OkpJwk;
-    plaintext: Uint8Array;
     kid: string;
     extensions?: X402Extension[];
   },
@@ -103,7 +99,6 @@ export async function createPaymentResponse(
       makeEntitiesPublic: ["X-PAYMENT-RESPONSE"]
     } : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
-    plaintext: args.plaintext,
     kid: args.kid,
     extensions: args.extensions,
   });
@@ -118,7 +113,7 @@ export async function createPaymentResponse(
  * A helper to create a general-purpose request envelope.
  * @param hpke The configured hpke instance.
  * @param args The arguments for the request.
- * @param isPublic If true, exposes the request data in a public X-Request header.
+ * @param isPublic If true, exposes the request data in a public header.
  * @returns The sealed envelope and an optional publicHeaders sidecar.
  */
 export async function createRequest(
@@ -131,16 +126,12 @@ export async function createRequest(
   },
   isPublic: boolean = false
 ) {
-  // Put request data in plaintext to allow extensions to work properly
-  const plaintext = new TextEncoder().encode(JSON.stringify(args.requestData));
-  
   const result = await hpke.seal({
     request: args.requestData,
     public: isPublic ? {
       makeEntitiesPublic: ["request"]
     } : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
-    plaintext,
     kid: args.kid,
     extensions: args.extensions,
   });
@@ -148,7 +139,6 @@ export async function createRequest(
   return {
     envelope: result.envelope,
     publicHeaders: result.publicHeaders,
-    publicJsonBody: result.publicJsonBody,
   };
 }
 
@@ -156,7 +146,7 @@ export async function createRequest(
  * A helper to create a general-purpose response envelope.
  * @param hpke The configured hpke instance.
  * @param args The arguments for the response.
- * @param isPublic If true, exposes the response data in a public X-Response header.
+ * @param isPublic If true, exposes the response data in a public header.
  * @returns The sealed envelope and an optional publicHeaders sidecar.
  */
 export async function createResponse(
@@ -164,7 +154,6 @@ export async function createResponse(
   args: {
     responseData: Record<string, any>;
     recipientPublicJwk: OkpJwk;
-    plaintext: Uint8Array;
     httpResponseCode: number;
     kid: string;
     extensions?: X402Extension[];
@@ -178,7 +167,6 @@ export async function createResponse(
       makeEntitiesPublic: ["response"]
     } : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
-    plaintext: args.plaintext,
     kid: args.kid,
     extensions: args.extensions,
   });
@@ -186,6 +174,5 @@ export async function createResponse(
   return {
     envelope: result.envelope,
     publicHeaders: result.publicHeaders,
-    publicJsonBody: result.publicJsonBody,
   };
 }

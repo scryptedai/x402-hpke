@@ -13,6 +13,16 @@
 - JWKS (JSON Web Key Set): HTTPS-only fetch with Cache-Control/Expires; selection by `kid`.
 - Interop: Node seals ↔ Python opens and vice versa. Cross-language tests included.
 
+## Expected interactions
+
+| Intent                        | Helper                  | x402 | Client | Server |
+|--------------------------------|-------------------------|------|--------|--------|
+| Send a Service Request         | createRequest           | no   | yes    | no     |
+| Send a 402 Payment Required    | createPaymentRequired   | yes  | no     | yes    |
+| Send a Payment                 | createPayment           | yes  | yes    | no     |
+| Send a Payment Response        | createPaymentResponse   | yes  | no     | yes    |
+| Send some other Response       | createResponse          | no   | no     | yes    |
+
 ## Core x402 Object Structure
 
 The x402 core object must include:
@@ -27,7 +37,7 @@ The x402 core object must include:
 
 ### HTTP Response Code Validation
 
-- **402 responses**: Supported in two forms: generic `response` with `httpResponseCode: 402` (recommended), or `x402` object with empty header `""`.
+- **402 responses**: `x402.header` MUST be `""` (empty) - never "X-Payment" or "X-Payment-Response"
 - **X-Payment**: No `httpResponseCode` should be set (client requests)
 - **X-Payment-Response**: Requires `httpResponseCode: 200`
 

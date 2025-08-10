@@ -18,41 +18,28 @@ npm install @x402-hpke/node@next
 ```ts
 import { createHpke, generateKeyPair, buildX402Headers } from "@x402-hpke/node";
 
-// Optionally provide first-class X-PAYMENT or X-PAYMENT-RESPONSE at construction time.
-// They will be bound into AAD by default and only revealed if requested at seal time.
-const payment = {
-  x402Version: 1,
-  scheme: "exact",
-  network: "base-sepolia",
-  payload: {
-    signature: "0x...",
-    authorization: {
-      from: "0x...", to: "0x...", value: "10000",
-      validAfter: "1740672089", validBefore: "1740672154", nonce: "0x...",
-    },
-  },
-};
-
-const hpke = createHpke({ namespace: "myapp", x402: payment });
+const hpke = createHpke({ namespace: "myapp" });
 const { publicJwk, privateJwk } = await generateKeyPair();
 
 const x402 = {
-  invoiceId: "inv_1",
-  chainId: 8453,
-  tokenContract: "0x" + "a".repeat(40),
-  amount: "1000",
-  recipient: "0x" + "b".repeat(40),
-  txHash: "0x" + "c".repeat(64),
-  expiry: 9999999999,
-  priceHash: "0x" + "d".repeat(64),
+  header: "X-Payment",
+  payload: {
+    invoiceId: "inv_1",
+    chainId: 8453,
+    tokenContract: "0x" + "a".repeat(40),
+    amount: "1000",
+    recipient: "0x" + "b".repeat(40),
+    txHash: "0x" + "c".repeat(64),
+    expiry: 9999999999,
+    priceHash: "0x" + "d".repeat(64),
+  }
 };
 
 const { envelope, publicHeaders } = await hpke.seal({
   kid: "kid1",
   recipientPublicJwk: publicJwk,
-  plaintext: new TextEncoder().encode("hello"),
   x402,
-  public: { x402Headers: true, revealPayment: true }, // reveals X-PAYMENT or X-PAYMENT-RESPONSE
+  public: { makeEntitiesPublic: ["X-PAYMENT"], as: "headers" },
 });
 
 const opened = await hpke.open({

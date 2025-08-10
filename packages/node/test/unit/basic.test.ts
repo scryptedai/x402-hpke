@@ -8,43 +8,38 @@ import { sealChunkXChaCha, openChunkXChaCha } from "../../src/streaming.js";
 await test("seal/open roundtrip with request payload", async () => {
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
-  const payload = new TextEncoder().encode("hello");
   const { envelope } = await hpke.seal({
     request: { action: "test" },
     kid: "kid1",
     recipientPublicJwk: publicJwk,
-    plaintext: payload,
   });
   const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kid1" });
-  assert.equal(new TextDecoder().decode(opened.plaintext), "hello");
   assert.deepStrictEqual(opened.request, { action: "test" });
+  // Implicit plaintext is JSON(request)
+  assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ action: "test" }));
 });
 
 await test("publicJsonBody for request payload", async () => {
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
-  const payload = new TextEncoder().encode("bye");
   const { envelope, publicJsonBody } = await hpke.seal({
     request: { data: "public" },
     kid: "kid1",
     recipientPublicJwk: publicJwk,
-    plaintext: payload,
     public: { makeEntitiesPublic: ["request"] },
   });
   assert.deepStrictEqual(publicJsonBody, { data: "public" });
   const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kid1" });
-  assert.equal(new TextDecoder().decode(opened.plaintext), "bye");
+  assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ data: "public" }));
 });
 
 await test("reject low-order shared secret", async () => {
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
-  const payload = new TextEncoder().encode("hi");
   const { envelope } = await hpke.seal({
     request: { data: "low_order" },
     kid: "kid1",
     recipientPublicJwk: publicJwk,
-    plaintext: payload,
   });
   const encZero = Buffer.alloc(32).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
   const bad = { ...envelope, enc: encZero } as typeof envelope; // 32 zero bytes
@@ -54,12 +49,10 @@ await test("reject low-order shared secret", async () => {
 await test("reject AEAD mismatch and unsupported", async () => {
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
-  const payload = new TextEncoder().encode("ok");
   const { envelope } = await hpke.seal({
     request: { data: "aead" },
     kid: "kid1",
     recipientPublicJwk: publicJwk,
-    plaintext: payload,
   });
   const bad = { ...envelope, aead: "AES-256-GCM" } as typeof envelope;
   await assert.rejects(() => hpke.open({ recipientPrivateJwk: privateJwk, envelope: bad, expectedKid: "kid1" }), /AEAD_MISMATCH/);
@@ -68,14 +61,12 @@ await test("reject AEAD mismatch and unsupported", async () => {
 await test("three use cases for sidecar generation with x402", async () => {
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
-  const payload = new TextEncoder().encode("test data");
 
   // Case 1: Client request (no httpResponseCode) - can include X-PAYMENT in sidecar
   const { envelope: clientEnvelope, publicHeaders: clientHeaders } = await hpke.seal({
     x402: { header: "X-Payment", payload: { invoiceId: "inv_1" } },
     kid: "kid1",
     recipientPublicJwk: publicJwk,
-    plaintext: payload,
     public: { makeEntitiesPublic: ["X-Payment"], as: "headers" }
   });
   assert.ok(clientHeaders);
@@ -87,7 +78,6 @@ await test("three use cases for sidecar generation with x402", async () => {
     httpResponseCode: 402,
     kid: "kid1",
     recipientPublicJwk: publicJwk,
-    plaintext: payload,
     public: { makeEntitiesPublic: ["X-Payment"], as: "headers" } // This should be ignored for 402
   });
   assert.ok(response402Envelope);
@@ -99,7 +89,6 @@ await test("three use cases for sidecar generation with x402", async () => {
     httpResponseCode: 200,
     kid: "kid1",
     recipientPublicJwk: publicJwk,
-    plaintext: payload,
     public: { makeEntitiesPublic: ["X-Payment-Response"], as: "headers" }
   });
   assert.ok(successHeaders);
@@ -110,9 +99,9 @@ await test("three use cases for sidecar generation with x402", async () => {
   const opened402 = await hpke.open({ recipientPrivateJwk: privateJwk, envelope: response402Envelope });
   const openedSuccess = await hpke.open({ recipientPrivateJwk: privateJwk, envelope: successEnvelope, publicHeaders: successHeaders });
   
-  assert.equal(new TextDecoder().decode(openedClient.plaintext), "test data");
-  assert.equal(new TextDecoder().decode(opened402.plaintext), "test data");
-  assert.equal(new TextDecoder().decode(openedSuccess.plaintext), "test data");
+  assert.equal(new TextDecoder().decode(openedClient.plaintext), JSON.stringify({ header: "X-Payment", payload: { invoiceId: "inv_1" } }));
+  assert.equal(new TextDecoder().decode(opened402.plaintext), JSON.stringify({}));
+  assert.equal(new TextDecoder().decode(openedSuccess.plaintext), JSON.stringify({ header: "X-Payment-Response", payload: { settlementId: "settle_1" } }));
 });
 
 await test("KATs v1 vectors", async () => {
@@ -128,14 +117,13 @@ await test("KATs v1 vectors", async () => {
     return Buffer.from(b64 + pad, "base64");
   };
   for (const v of doc.vectors || []) {
-    const { ns, kid, request, response, x402, sidecar_as, public: pub, plaintext_b64u, eph_seed32_b64u, http_response_code } = v;
+    const { ns, kid, request, response, x402, sidecar_as, public: pub, /* plaintext_b64u, */ eph_seed32_b64u, http_response_code } = v;
     const { publicJwk, privateJwk } = await generateKeyPair();
-    const plaintext = b64uToBytes(plaintext_b64u || "");
     const seed = b64uToBytes(eph_seed32_b64u || "");
     const __testEphSeed32 = seed.length === 32 ? seed : undefined;
     const makeEntitiesPublic = Array.isArray(pub) ? pub : (pub === "all" || pub === "*" ? "all" : undefined);
     const as = sidecar_as === "json" ? "json" : "headers";
-    const sealArgs: any = { kid, recipientPublicJwk: publicJwk, plaintext, __testEphSeed32 };
+    const sealArgs: any = { kid, recipientPublicJwk: publicJwk, __testEphSeed32 };
     if (request) sealArgs.request = request;
     if (response) sealArgs.response = response;
     if (x402) sealArgs.x402 = x402;

@@ -11,15 +11,13 @@ await test("python seals -> node opens", async () => {
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
   const requestPayload = { action: "from_python" };
-  const payload = new TextEncoder().encode("from_python");
   const pyRoot = path.resolve(__dirname, "../../../python");
   const req = {
     namespace: "myapp",
     kid: "kidPY",
     recipient_public_jwk: publicJwk,
-    plaintext_b64u: Buffer.from(payload).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"),
     request: requestPayload,
-  };
+  } as any;
   const res = spawnSync("poetry", ["run", "python", "scripts/seal.py"], {
     cwd: pyRoot,
     input: JSON.stringify(req),
@@ -29,6 +27,6 @@ await test("python seals -> node opens", async () => {
   const envelope = JSON.parse(res.stdout);
 
   const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kidPY" });
-  assert.equal(new TextDecoder().decode(opened.plaintext), "from_python");
+  assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(requestPayload));
   assert.deepStrictEqual(opened.request, requestPayload);
 });

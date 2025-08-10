@@ -14,25 +14,23 @@ let serverKeys: any;
 
 app.post("/quote", async (req, res) => {
   const x402 = {
-    invoiceId: "inv_demo",
-    chainId: 8453,
-    tokenContract: "0x" + "a".repeat(40),
-    amount: "1000",
-    recipient: "0x" + "b".repeat(40),
-    txHash: "0x" + "c".repeat(64),
-    expiry: Math.floor(Date.now() / 1000) + 600,
-    priceHash: "0x" + "d".repeat(64),
+    header: "X-Payment",
+    payload: {
+      invoiceId: "inv_demo",
+      chainId: 8453,
+      tokenContract: "0x" + "a".repeat(40),
+      amount: "1000",
+      recipient: "0x" + "b".repeat(40),
+      txHash: "0x" + "c".repeat(64),
+      expiry: Math.floor(Date.now() / 1000) + 600,
+      priceHash: "0x" + "d".repeat(64),
+    }
   };
-  // Application metadata (keep sensitive items in AAD; expose only non-sensitive hints in sidecar)
-  const appMeta = { traceId: req.header("X-Trace-Id") ?? cryptoRandomId(), model: "gpt-4o-mini" };
-  const payload = new TextEncoder().encode(JSON.stringify({ type: "quote" }));
   const { envelope, publicHeaders } = await hpke.seal({
     kid: "kid1",
     recipientPublicJwk: serverKeys.publicJwk,
-    plaintext: payload,
     x402,
-    app: appMeta,
-    public: { x402Headers: true, appHeaderAllowlist: ["traceId"], as: "headers" },
+    public: { makeEntitiesPublic: ["X-PAYMENT"], as: "headers" },
   });
   res
     .status(402)
@@ -45,7 +43,6 @@ app.post("/fulfill", async (req, res) => {
   try {
     const sidecar: Record<string, string> = pickSidecarFrom(req.headers);
     const opened = await hpke.open({ recipientPrivateJwk: serverKeys.privateJwk, envelope: env, expectedKid: env.kid, publicHeaders: sidecar });
-    // TODO: verify facilitator using opened.x402
     res.json({ ok: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
@@ -53,10 +50,6 @@ app.post("/fulfill", async (req, res) => {
 });
 
 app.listen(3000, () => console.log("Express example on :3000"));
-
-function cryptoRandomId(): string {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-}
 
 function pickSidecarFrom(headers: any): Record<string, string> {
   const out: Record<string, string> = {};

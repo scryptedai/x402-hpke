@@ -100,7 +100,6 @@ const { envelope: responseEnvelope, publicJsonBody: responsePublicBody } = await
     responseData: { status: "ok", data: { a: 1 } },
     recipientPublicJwk: publicJwk,
     kid: "server-key-1",
-    plaintext: new TextEncoder().encode("hello"),
     httpResponseCode: 200,
   },
   true // isPublic
@@ -156,7 +155,6 @@ env, body = create_response(
     response_data={"status": "ok", "data": {"a": 1}},
     recipient_public_jwk=PUB,
     kid="server-key-1",
-    plaintext=b"hello",
     http_response_code=200,
     is_public=True,
 )

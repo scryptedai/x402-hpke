@@ -84,7 +84,6 @@ def test_three_use_cases_for_sidecar_generation_with_x402():
         x402={"header": "X-Payment", "payload": {"invoiceId": "inv_1"}},
         kid="kid1",
         recipient_public_jwk=pub,
-        plaintext=payload,
         public={"makeEntitiesPublic": ["X-Payment"], "as": "headers"},
     )
     assert sidecar is not None
@@ -96,7 +95,6 @@ def test_three_use_cases_for_sidecar_generation_with_x402():
         http_response_code=402,
         kid="kid1",
         recipient_public_jwk=pub,
-        plaintext=payload,
         public=None,
     )
     assert env_402 is not None
@@ -109,7 +107,6 @@ def test_three_use_cases_for_sidecar_generation_with_x402():
         http_response_code=200,
         kid="kid1",
         recipient_public_jwk=pub,
-        plaintext=payload,
         public={"makeEntitiesPublic": ["X-PAYMENT-RESPONSE"], "as": "headers"},
     )
     assert sidecar_success is not None
@@ -120,9 +117,15 @@ def test_three_use_cases_for_sidecar_generation_with_x402():
     pt_402, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env_402)
     pt_success, _, _ = hpke.open(recipient_private_jwk=priv, envelope=env_success, public_headers=sidecar_success)
 
-    assert pt_client == payload
-    assert pt_402 == payload
-    assert pt_success == payload
+    # The plaintext should now be the JSON-encoded payload data
+    import json
+    expected_client = json.dumps({"header": "X-Payment", "payload": {"invoiceId": "inv_1"}}).encode("utf-8")
+    expected_402 = json.dumps({"status": "payment-required"}).encode("utf-8")
+    expected_success = json.dumps({"header": "X-Payment-Response", "payload": {"settlementId": "settle_1"}}).encode("utf-8")
+    
+    assert pt_client == expected_client
+    assert pt_402 == expected_402
+    assert pt_success == expected_success
 
 def test_kats_v1_vectors():
     hpke = create_hpke(namespace="myapp")
@@ -142,7 +145,6 @@ def test_kats_v1_vectors():
         eph_seed32_b64u = v.get("eph_seed32_b64u")
         http_response_code = v.get("http_response_code")
         pub_jwk, priv_jwk = generate_keypair()
-        plaintext = base64.urlsafe_b64decode((plaintext_b64u + "==").encode("ascii")) if plaintext_b64u else b""
         # Python seal doesn't expose eph seed; skip deterministic check here
         public = None
         if pub is not None:
@@ -153,7 +155,6 @@ def test_kats_v1_vectors():
         env, sidecar = hpke.seal(
             kid=kid,
             recipient_public_jwk=pub_jwk,
-            plaintext=plaintext,
             request=request,
             response=response,
             x402=x402,

@@ -6,7 +6,6 @@ def create_payment_required(
     hpke: object,
     payment_required_data: Dict[str, Any],
     recipient_public_jwk: Dict[str, Any],
-    plaintext: bytes,
     kid: str,
     is_public: bool = False,
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
@@ -18,7 +17,6 @@ def create_payment_required(
         http_response_code=402,
         public={"makeEntitiesPublic": ["*"], "as": "json"} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
-        plaintext=plaintext,
         kid=kid,
     )
     return env, public_body if is_public else None
@@ -41,7 +39,6 @@ def create_payment(
         },
         public={"makeEntitiesPublic": ["X-Payment"]} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
-        plaintext=b"",  # Empty plaintext
         kid=kid,
         extensions=extensions,
     )
@@ -50,7 +47,6 @@ def create_payment_response(
     hpke: object,
     settlement_data: Dict[str, Any],
     recipient_public_jwk: Dict[str, Any],
-    plaintext: bytes,
     kid: str,
     extensions: Optional[List[Dict[str, Any]]] = None,
     is_public: bool = False,
@@ -66,7 +62,6 @@ def create_payment_response(
         http_response_code=200,
         public={"makeEntitiesPublic": ["X-Payment-Response"]} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
-        plaintext=plaintext,
         kid=kid,
         extensions=extensions,
     )
@@ -82,14 +77,10 @@ def create_request(
     """
     A helper to create a general-purpose request envelope.
     """
-    # Put request data in plaintext to allow extensions to work properly
-    plaintext = json.dumps(request_data).encode("utf-8")
-
     return hpke.seal(
         request=request_data,
         public={"makeEntitiesPublic": ["request", *[e["header"] for e in extensions]]} if is_public and extensions else {"makeEntitiesPublic": ["request"]} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
-        plaintext=plaintext,
         kid=kid,
         extensions=extensions,
     )
@@ -98,7 +89,6 @@ def create_response(
     hpke: object,
     response_data: Dict[str, Any],
     recipient_public_jwk: Dict[str, Any],
-    plaintext: bytes,
     http_response_code: int,
     kid: str,
     extensions: Optional[List[Dict[str, Any]]] = None,
@@ -112,7 +102,6 @@ def create_response(
         http_response_code=http_response_code,
         public={"makeEntitiesPublic": ["response"]} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
-        plaintext=plaintext,
         kid=kid,
         extensions=extensions,
     )

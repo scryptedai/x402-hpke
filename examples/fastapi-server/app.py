@@ -12,26 +12,26 @@ PUB, PRIV = generate_keypair()
 @app.post("/quote")
 async def quote(request: Request):
     x402 = {
-        "invoiceId": "inv_demo",
-        "chainId": 8453,
-        "tokenContract": "0x" + "a"*40,
-        "amount": "1000",
-        "recipient": "0x" + "b"*40,
-        "txHash": "0x" + "c"*64,
-        "expiry": int(time.time()) + 600,
-        "priceHash": "0x" + "d"*64,
+        "header": "X-Payment",
+        "payload": {
+            "invoiceId": "inv_demo",
+            "chainId": 8453,
+            "tokenContract": "0x" + "a"*40,
+            "amount": "1000",
+            "recipient": "0x" + "b"*40,
+            "txHash": "0x" + "c"*64,
+            "expiry": int(time.time()) + 600,
+            "priceHash": "0x" + "d"*64,
+        }
     }
     # App metadata: keep sensitive items in AAD; expose only non-sensitive hints (e.g., trace id)
     trace_id = request.headers.get("X-Trace-Id") or _random_id()
     app_meta = {"traceId": trace_id, "model": "gpt-4o-mini"}
-    payload = json.dumps({"type": "quote"}).encode()
     env, hdrs = hpke.seal(
         kid="kid1",
         recipient_public_jwk=PUB,
-        plaintext=payload,
         x402=x402,
-        app=app_meta,
-        public={"x402Headers": True, "appHeaderAllowlist": ["traceId"], "as": "headers"},
+        public={"makeEntitiesPublic": ["X-PAYMENT"], "as": "headers"},
     )
     headers = {"Cache-Control": "no-store"}
     if hdrs:
@@ -44,7 +44,7 @@ async def fulfill(request: Request):
     try:
         # reconstruct sidecar mapping
         sidecar = {k: v for k, v in request.headers.items() if k.lower() in ("x-x402-invoice-id", "x-x402-expiry", "x-myapp-trace-id")}
-        pt, x402_fields, app_fields = hpke.open(
+        pt, x402_fields, request_fields, response_fields, ext = hpke.open(
             recipient_private_jwk=PRIV,
             envelope=env,
             expected_kid=env.get("kid"),

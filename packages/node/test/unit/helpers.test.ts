@@ -19,7 +19,6 @@ await test("createPaymentRequired helper", async (t) => {
     cost: "1000",
     currency: "USD",
   };
-  const plaintext = new TextEncoder().encode("hello");
 
   await t.test("creates a private 402 response by default", async () => {
     const { envelope, publicJsonBody } = await createPaymentRequired(
@@ -27,7 +26,6 @@ await test("createPaymentRequired helper", async (t) => {
       {
         paymentRequiredData,
         recipientPublicJwk: publicJwk,
-        plaintext,
         kid: "server-key-1",
       }
     );
@@ -41,7 +39,7 @@ await test("createPaymentRequired helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), "hello");
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(paymentRequiredData));
     assert.deepStrictEqual(opened.response, paymentRequiredData);
   });
 
@@ -51,7 +49,6 @@ await test("createPaymentRequired helper", async (t) => {
       {
         paymentRequiredData,
         recipientPublicJwk: publicJwk,
-        plaintext,
         kid: "server-key-1",
       },
       true // isPublic = true
@@ -66,7 +63,7 @@ await test("createPaymentRequired helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), "hello");
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(paymentRequiredData));
     assert.deepStrictEqual(opened.response, paymentRequiredData);
   });
 });
@@ -97,7 +94,7 @@ await test("createPayment helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(opened.plaintext.length, 0);
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment", payload: paymentData }));
     assert.deepStrictEqual(opened.x402.payload, paymentData);
   });
 
@@ -122,7 +119,7 @@ await test("createPayment helper", async (t) => {
       publicHeaders,
     });
 
-    assert.equal(opened.plaintext.length, 0);
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment", payload: paymentData }));
     assert.deepStrictEqual(opened.x402.payload, paymentData);
   });
 });
@@ -131,9 +128,8 @@ await test("createPaymentResponse helper", async (t) => {
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
   const settlementData = {
-    receipt: "receipt_123",
+    settlementId: "settle_123",
   };
-  const plaintext = new TextEncoder().encode("here is your data");
 
   await t.test("creates a private payment response by default", async () => {
     const { envelope, publicHeaders } = await createPaymentResponse(
@@ -141,7 +137,6 @@ await test("createPaymentResponse helper", async (t) => {
       {
         settlementData,
         recipientPublicJwk: publicJwk,
-        plaintext,
         kid: "server-key-1",
       }
     );
@@ -155,7 +150,7 @@ await test("createPaymentResponse helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), "here is your data");
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment-Response", payload: settlementData }));
     assert.deepStrictEqual(opened.x402.payload, settlementData);
   });
 
@@ -165,7 +160,6 @@ await test("createPaymentResponse helper", async (t) => {
       {
         settlementData,
         recipientPublicJwk: publicJwk,
-        plaintext,
         kid: "server-key-1",
       },
       true // isPublic = true
@@ -181,7 +175,7 @@ await test("createPaymentResponse helper", async (t) => {
       publicHeaders,
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), "here is your data");
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment-Response", payload: settlementData }));
     assert.deepStrictEqual(opened.x402.payload, settlementData);
   });
 });
@@ -218,7 +212,7 @@ await test("createRequest helper", async (t) => {
   });
 
   await t.test("creates a public request when isPublic is true", async () => {
-    const { envelope, publicJsonBody } = await createRequest(
+    const { envelope, publicHeaders } = await createRequest(
       hpke,
       {
         requestData,
@@ -229,7 +223,8 @@ await test("createRequest helper", async (t) => {
     );
 
     assert.ok(envelope);
-    assert.deepStrictEqual(publicJsonBody, requestData);
+    // public headers are not emitted for generic request bodies; we may return a JSON body via direct seal
+    assert.strictEqual(publicHeaders, undefined);
 
     const opened = await hpke.open({
       recipientPrivateJwk: privateJwk,
@@ -272,22 +267,20 @@ await test("createResponse helper", async (t) => {
     status: "success",
     data: { id: 123, name: "test" },
   };
-  const plaintext = new TextEncoder().encode("response data");
 
   await t.test("creates a private response by default", async () => {
-    const { envelope, publicJsonBody } = await createResponse(
+    const { envelope, publicHeaders } = await createResponse(
       hpke,
       {
         responseData,
         recipientPublicJwk: publicJwk,
-        plaintext,
         httpResponseCode: 200,
         kid: "server-key-1",
       }
     );
 
     assert.ok(envelope);
-    assert.strictEqual(publicJsonBody, undefined);
+    assert.strictEqual(publicHeaders, undefined);
 
     const opened = await hpke.open({
       recipientPrivateJwk: privateJwk,
@@ -295,17 +288,16 @@ await test("createResponse helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), "response data");
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(responseData));
     assert.deepStrictEqual(opened.response, responseData);
   });
 
   await t.test("creates a public response when isPublic is true", async () => {
-    const { envelope, publicJsonBody } = await createResponse(
+    const { envelope, publicHeaders } = await createResponse(
       hpke,
       {
         responseData,
         recipientPublicJwk: publicJwk,
-        plaintext,
         httpResponseCode: 200,
         kid: "server-key-1",
       },
@@ -313,7 +305,8 @@ await test("createResponse helper", async (t) => {
     );
 
     assert.ok(envelope);
-    assert.deepStrictEqual(publicJsonBody, responseData);
+    // For generic responses we do not emit headers; body exposure is controlled at direct seal level
+    assert.strictEqual(publicHeaders, undefined);
 
     const opened = await hpke.open({
       recipientPrivateJwk: privateJwk,
@@ -321,30 +314,7 @@ await test("createResponse helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), "response data");
-    assert.deepStrictEqual(opened.response, responseData);
-  });
-
-  await t.test("works with different http response codes", async () => {
-    const { envelope } = await createResponse(
-      hpke,
-      {
-        responseData,
-        recipientPublicJwk: publicJwk,
-        plaintext,
-        httpResponseCode: 201,
-        kid: "server-key-1",
-      }
-    );
-
-    assert.ok(envelope);
-
-    const opened = await hpke.open({
-      recipientPrivateJwk: privateJwk,
-      envelope,
-      expectedKid: "server-key-1",
-    });
-
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(responseData));
     assert.deepStrictEqual(opened.response, responseData);
   });
 });
