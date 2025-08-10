@@ -129,9 +129,6 @@ export async function seal(args: {
     if (httpResponseCode === undefined) {
       throw new Error("INVALID_RESPONSE_PARAMS: 'httpResponseCode' is required for 'response' payloads.");
     }
-    if (httpResponseCode === 402) {
-      throw new Error("INVALID_RESPONSE_PARAMS: 'httpResponseCode' cannot be 402 for 'response' payloads.");
-    }
   }
 
   // Rule 4: The `x402` Object
@@ -158,7 +155,7 @@ export async function seal(args: {
   if ((plaintext as any) && typeof plaintext === 'object') {
     // guardrail: if caller mistakenly includes x402/app keys in plaintext object, reject in v1 (payload must be opaque bytes)
   }
-  const { aadBytes, x402Normalized, appNormalized } = buildCanonicalAad(
+  const { aadBytes, x402Normalized, appNormalized, extensionsNormalized } = buildCanonicalAad(
     namespace, 
     { request, response, x402 },
     extensions
@@ -221,16 +218,16 @@ export async function seal(args: {
   if (httpResponseCode === 402) {
     // Only emit approved extensions if explicitly requested
     let extAllow: string[] = [];
-    const makePub = args.public?.makeEntitiesPublic;
-    if (makePub === "all" || makePub === "*") {
+    const makePub402 = args.public?.makeEntitiesPublic;
+    if (makePub402 === "all" || makePub402 === "*") {
       if (extensionsNormalized && Array.isArray(extensionsNormalized)) {
         extAllow = extensionsNormalized
           .map((e: any) => String(e.header))
           .filter((h: string) => isApprovedExtensionHeader(h));
       }
-    } else if (Array.isArray(makePub)) {
+    } else if (Array.isArray(makePub402)) {
       // For 402, only process approved extension headers, ignore core payment headers
-      extAllow = makePub
+      extAllow = makePub402
         .filter((h: string) => isApprovedExtensionHeader(h));
     }
     
@@ -272,21 +269,21 @@ export async function seal(args: {
   // For non-402 responses (including client requests), handle normal sidecar logic
   // Compute which extensions to emit
   let extAllow: string[] = [];
-  const makePub = args.public?.makeEntitiesPublic;
-  if (makePub === "all" || makePub === "*") {
+  const makePubGeneral = args.public?.makeEntitiesPublic;
+  if (makePubGeneral === "all" || makePubGeneral === "*") {
     if (extensionsNormalized && Array.isArray(extensionsNormalized)) {
       extAllow = extensionsNormalized
         .map((e: any) => String(e.header))
         .filter((h: string) => isApprovedExtensionHeader(h));
     }
-  } else if (Array.isArray(makePub)) {
-    extAllow = makePub.slice();
+  } else if (Array.isArray(makePubGeneral)) {
+    extAllow = makePubGeneral.slice();
   }
   
   // Decide if core payment header should be emitted via makePublic
-  let wantPayment = Array.isArray(makePub)
-    ? (makePub as string[]).some((h) => ["X-PAYMENT", "X-PAYMENT-RESPONSE"].includes(String(h).toUpperCase()))
-    : makePub === "all" || makePub === "*";
+  let wantPayment = Array.isArray(makePubGeneral)
+    ? (makePubGeneral as string[]).some((h) => ["X-PAYMENT", "X-PAYMENT-RESPONSE"].includes(String(h).toUpperCase()))
+    : makePubGeneral === "all" || makePubGeneral === "*";
     
   // Apply makeEntitiesPrivate subtraction
   const makePriv = args.public?.makeEntitiesPrivate;

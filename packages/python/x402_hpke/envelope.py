@@ -74,8 +74,6 @@ def create_hpke(
             if response is not None:
                 if http_response_code is None:
                     raise ValueError("'http_response_code' is required for 'response' payloads.")
-                if http_response_code == 402:
-                    raise ValueError("'http_response_code' cannot be 402 for 'response' payloads.")
 
             # Rule 4: The `x402` Object
             if x402 is not None:
