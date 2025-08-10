@@ -159,22 +159,16 @@ const hpke = createHpke({ namespace: "myapp" });
 const { publicJwk, privateJwk } = await generateKeyPair();
 const jwks = generateSingleJwks(publicJwk, "request-key-1");
 
-// Include in X-402-Security extension
+// Include in X-402-Security extension (canonical headers+body shown for clarity)
 const { envelope, publicHeaders } = await hpke.seal({
   kid: "sender-kid",
   recipientPublicJwk: recipientJwk,
-  plaintext: Buffer.from("hello"),
-  x402: { header: "X-Payment", payload: { /* payment details */ } },
-  app: {
-    extensions: [{
-      header: "X-402-Security",
-      payload: {
-        jwks: jwks,
-        minKeyStrength: 256,
-        allowedSuites: ["X25519"]
-      }
-    }]
-  }
+  privateHeaders: [
+    { header: "X-Payment", value: { /* payment details */ } },
+    { header: "X-402-Security", value: { jwks, minKeyStrength: 256, allowedSuites: ["X25519"] } }
+  ],
+  privateBody: { /* request body */ },
+  public: { makeEntitiesPublic: ["X-PAYMENT", "X-402-Security"], as: "json" }
 });
 ```
 

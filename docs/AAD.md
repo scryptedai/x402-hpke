@@ -12,34 +12,31 @@ AAD provides integrity protection and binding for all x402 metadata and applicat
 
 ## AAD Structure
 
-AAD bytes = UTF‑8 of: `<ns>|v1|` + json(primary_payload) + `|` + json(extensions?)
+AAD bytes = UTF‑8 of: `<ns>|v1|` + json(headers_array) + `|` + json(body_object)
 
-### Primary Payload
+### headers_array
 
-The `primary_payload` is one of the following:
+- Array of normalized header entries: `{ header: string, value: object, ...extras }`
+- Header names are canonicalized (core: `X-Payment`, `X-Payment-Response`, or `""`); extensions are case-normalized and must be approved.
+- Entries are sorted by `header` (case-insensitive).
 
-- **`request`**: A generic request object.
-- **`response`**: A generic response object.
-- **`x402`**: A specialized `x402` object for payment protocol messages.
+### body_object
 
-### Extensions (optional)
-
-- `extensions` is an array of `{ header, payload }` objects for approved extensions.
-- Extensions are sorted by `header` (case-insensitive) during canonicalization.
+- Deep-canonicalized `privateBody` (application payload). Top-level keys MUST NOT collide (case-insensitive) with header names.
 
 ## Header Usage Rules
 
 ### Valid Header Values
 
-- **"X-Payment"**: Client requests with payment (no httpResponseCode)
-- **"X-Payment-Response"**: Server responses with payment receipt (requires httpResponseCode: 200)
-- **"" (empty)**: Confidential requests/responses (402 or other status codes)
+- **"X-Payment"**: Client requests with payment (no httpResponseCode).
+- **"X-Payment-Response"**: Server responses with payment receipt (requires httpResponseCode: 200; auto-set if omitted).
+- **"" (empty)**: Payment Required (402); header value is reassigned into the body.
 
 ### HTTP Response Code Validation
 
-- **402 responses**: Either use a generic `response` with `httpResponseCode: 402` (recommended), or an `x402` object with empty header `""`.
-- **X-Payment**: No `httpResponseCode` should be set (client requests)
-- **X-Payment-Response**: Requires `httpResponseCode: 200`
+- **402 responses**: core headers MUST NOT be emitted in sidecar; approved extensions and selected body keys may be emitted.
+- **X-Payment**: MUST NOT set `httpResponseCode`.
+- **X-Payment-Response**: Requires `httpResponseCode: 200` (auto-set if omitted).
 
 ## Encoding (normative)
 
@@ -48,39 +45,33 @@ The `primary_payload` is one of the following:
 
 ## Example AAD Construction
 
-### Input Data
+### Input Data (canonical)
 
 ```typescript
 const namespace = "myapp";
-const request = {
-  action: "getUserProfile",
-  userId: "user-123"
-};
-const extensions = [
-  {
-    header: "X-402-Routing",
-    payload: { service: "worker-A", priority: "high" }
-  }
+const privateHeaders = [
+  { header: "X-402-Routing", value: { service: "worker-A", priority: "high" } }
 ];
+const privateBody = { action: "getUserProfile", userId: "user-123" };
 ```
 
 ### Canonicalized AAD
 
 ```
-myapp|v1|{"action":"getUserProfile","userId":"user-123"}|[{"header":"X-402-Routing","payload":{"priority":"high","service":"worker-A"}}]
+myapp|v1|[{"header":"X-402-Routing","value":{"priority":"high","service":"worker-A"}}]|{"action":"getUserProfile","userId":"user-123"}
 ```
 
 ### Breakdown
 
 1. **Namespace**: `myapp`
 2. **Version**: `v1`
-3. **Primary Payload**: The `request` object, canonicalized.
-4. **Extensions**: The `extensions` array, sorted and canonicalized.
+3. **Headers array**: normalized and sorted.
+4. **Body object**: canonicalized application payload.
 
 ## Validation
 
-- **Header validation**: Must be "X-Payment", "X-Payment-Response", or "" (empty)
-- **Payload validation**: Must be a non-empty object
+- **Header validation**: Must be core x402 or approved extension; unique by name.
+- **Body validation**: Keys must not collide with header names; canonicalizable to JSON.
 - **Extension validation**: Headers must be approved and unique
 - **Namespace validation**: Cannot be "x402" (reserved)
 - **HTTP response code validation**: Enforces header usage rules

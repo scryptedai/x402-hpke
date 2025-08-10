@@ -2,9 +2,9 @@
 
 - **Default**: No transport headers are emitted; AAD binds all metadata.
 - **Optional sidecar** via `public` in `seal()`:
-  - `makeEntitiesPublic: "all" | "*" | ["X-PAYMENT", "X-402-Routing", ...]` → emit entities (all or selected)
+  - `makeEntitiesPublic: "all" | "*" | ["X-PAYMENT", "X-402-Routing", "action", ...]` → emit selected header names and/or body keys
   - `makeEntitiesPrivate: ["traceId", ...]` → subtract entities from the public set
-  - `as: "headers"` (default) or `"json"` → sidecar format
+  - `as: "headers"` (default) or `"json"` → when `json`, both `publicHeaders` (as a JSON object) and `publicBody` (selected body keys) may be returned
 - Server must compare sidecar values to those reconstructed from AAD. Mismatch → `400 AAD_MISMATCH`.
 - Sidecar keys must be present in AAD; attempts to expose missing keys → `400 PUBLIC_KEY_NOT_IN_AAD`.
 
@@ -12,8 +12,8 @@
 
 The `httpResponseCode` parameter in `seal()` controls sidecar behavior and enforces header validation:
 
-- **402 responses**: Never emit X-PAYMENT headers in sidecar (only approved extensions)
-- **Other responses**: Can emit both payment headers and approved extensions  
+- **402 responses**: Never emit core x402 headers (X-PAYMENT/X-PAYMENT-RESPONSE) in sidecar; approved extensions and selected body keys may be emitted.
+- **Other responses**: Can emit both core x402 headers and approved extensions as requested.
 - **Client requests**: Can emit X-PAYMENT headers for payment verification
 
 ### Header Usage Rules
@@ -68,7 +68,7 @@ Sidecars are generated based on the `public` parameter in the `seal` method.
 
 ### Generic Request/Response
 
-If `makeEntitiesPublic` includes `"request"` or `"response"`, the corresponding object will be returned as a JSON body in the `publicJsonBody` field. This is the recommended way to expose the primary payload for non-payment messages.
+If using the legacy `request`/`response` fields, `makeEntitiesPublic: ["request"|"response"]` returns the object as `publicJsonBody` (Node) or is suppressed by helpers to keep return signatures consistent. Canonically, use `publicBody` with named body keys via `makeEntitiesPublic` and `as: "json"`.
 
 ```typescript
 // Seal a request and expose it as a JSON body
@@ -81,7 +81,7 @@ const { envelope, publicJsonBody } = await hpke.seal({
 
 ### Payment Protocol (`x402`) and Extensions
 
-For `x402` payloads and extensions, the sidecar is generated as headers (or a JSON object of headers).
+For `x402` payloads and extensions, the sidecar is generated as headers (or a JSON object of headers). Core headers use upper-case keys: `X-PAYMENT`, `X-PAYMENT-RESPONSE`.
 
 ```typescript
 // Seal an X-Payment header and an extension header
@@ -184,7 +184,7 @@ const { envelope, publicHeaders } = await hpke.seal({
 // publicHeaders will only contain approved extension headers (if requested)
 ```
 
-2) Also valid: `x402` with empty header for 402 (no X-PAYMENT/X-PAYMENT-RESPONSE). This remains supported for interop.
+2) Also valid: core x402 empty header `""`; its value is reassigned to the body, and no core x402 headers are emitted in sidecar.
 
 ```typescript
 const { envelope, publicHeaders } = await hpke.seal({
