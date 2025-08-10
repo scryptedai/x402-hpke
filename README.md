@@ -1,6 +1,6 @@
 # x402-hpke
 
-Provider-agnostic HPKE envelope library for x402 — Node (TypeScript) and Python (Poetry). Canonical AAD with x402 fields, optional public sidecar (headers/JSON) for legacy middleware, and deterministic interop.
+Provider-agnostic HPKE envelope library for x402 — Node (TypeScript) and Python (Poetry). Canonical AAD built from a unified transport model, optional sidecar projection that is private-by-default, and deterministic interop.
 
 - Repository: `https://github.com/scryptedai/x402-hpke`
 - Monorepo layout:
@@ -14,8 +14,8 @@ Current versions
 - Python: `0.1.0a1` (alpha, prerelease)
 - Node: `0.1.0-alpha.1` (alpha, prerelease)
 - Pinned ciphersuite (v1): X25519 / HKDF-SHA256 / ChaCha20-Poly1305 (envelope). Streaming uses exported key + XChaCha20-Poly1305.
-- AAD is the single source of truth for all x402 + app metadata. Payload is opaque by default.
-- Optional public sidecar is a projection of AAD; server enforces byte-for-byte equivalence.
+- AAD is the single source of truth for all x402 + app metadata. Sidecar is disabled by default.
+- Optional sidecar is a projection of AAD; server enforces byte-for-byte equivalence.
 
 License: MIT © 2025 Tim Cotten <tcotten@scrypted.ai>, Scrypted Inc.
 
@@ -77,24 +77,25 @@ const hpke = createHpke({
 const { publicJwk, privateJwk } = await generateKeyPair();
 
 // Generic request
-const { envelope, publicJsonBody } = await createRequest(
+const { envelope } = await createRequest(
   hpke,
   {
     requestData: { action: "getUserProfile", userId: "user-123" },
     recipientPublicJwk: publicJwk,
     kid: "client-key-1",
   },
-  true // isPublic
+  false // private by default
 );
 
-const { plaintext, request } = await hpke.open({ 
+const { plaintext, body } = await hpke.open({ 
   recipientPrivateJwk: privateJwk, 
   envelope,
   expectedKid: "server-key-1"
 });
+// body == { action: "getUserProfile", userId: "user-123" }
 
 // Generic response
-const { envelope: responseEnvelope, publicJsonBody: responsePublicBody } = await createResponse(
+const { envelope: responseEnvelope } = await createResponse(
   hpke,
   {
     responseData: { status: "ok", data: { a: 1 } },
@@ -102,10 +103,10 @@ const { envelope: responseEnvelope, publicJsonBody: responsePublicBody } = await
     kid: "server-key-1",
     httpResponseCode: 200,
   },
-  true // isPublic
+  false // private by default
 );
 
-// Payment request
+// Payment request (public sidecar optional)
 const { envelope: paymentEnvelope, publicHeaders } = await createPayment(
   hpke,
   {
@@ -113,7 +114,7 @@ const { envelope: paymentEnvelope, publicHeaders } = await createPayment(
     recipientPublicJwk: publicJwk,
     kid: "client-key-1",
   },
-  true // isPublic
+  true // request explicit sidecar
 );
 ```
 
@@ -134,35 +135,36 @@ hpke = create_hpke(namespace="myapp")
 
 PUB, PRIV = generate_keypair()
 
-# Generic request
-env, body = create_request(
+# Generic request (private by default)
+env, _ = create_request(
     hpke,
     request_data={"action": "getUserProfile", "userId": "user-123"},
     recipient_public_jwk=PUB,
     kid="client-key-1",
-    is_public=True,
+    is_public=False,
 )
 
-pt, req, _ = hpke.open(
+pt, body, headers = hpke.open(
     recipient_private_jwk=PRIV, 
     envelope=env,
     expected_kid="server-key-1"
 )
+assert body == {"action": "getUserProfile", "userId": "user-123"}
 
-# Generic response
-env, body = create_response(
+# Generic response (private by default)
+env, _ = create_response(
     hpke,
     response_data={"status": "ok", "data": {"a": 1}},
     recipient_public_jwk=PUB,
     kid="server-key-1",
     http_response_code=200,
-    is_public=True,
+    is_public=False,
 )
 
-# Payment request
+# Payment request (optional public sidecar)
 env, headers = create_payment(
     hpke,
-    payment_data={ /* ...EVM payment details... */ },
+    payment_data={ "invoiceId": "inv_1" },
     recipient_public_jwk=PUB,
     kid="client-key-1",
     is_public=True,

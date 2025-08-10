@@ -17,7 +17,7 @@ poetry run uvicorn examples.fastapi-server.app:app --reload
 File: `examples/client-python/client.py`
 
 - Seals payload + AAD.
-- Public sidecar: `x402Headers: True` to emit `X-X402-*`.
+- Public sidecar: use helper `is_public=True` or direct `make_entities_public` selection; private by default.
 
 Run:
 ```bash
@@ -51,7 +51,7 @@ env, headers = create_payment(
     is_public=True,
 )
 
-pt, x402, _ = hpke.open(
+pt, body, headers2 = hpke.open(
     recipient_private_jwk=PRIV,
     envelope=env,
     expected_kid="kid-2025",

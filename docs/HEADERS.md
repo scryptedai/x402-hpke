@@ -1,10 +1,9 @@
 # Headers / Sidecar
 
 - **Default**: No transport headers are emitted; AAD binds all metadata.
-- **Optional sidecar** via `public` in `seal()`:
+- **Optional sidecar** via makeEntitiesPublic in `seal()`:
   - `makeEntitiesPublic: "all" | "*" | ["X-PAYMENT", "X-402-Routing", "action", ...]` → emit selected header names and/or body keys
-  - `makeEntitiesPrivate: ["traceId", ...]` → subtract entities from the public set
-  - `as: "headers"` (default) or `"json"` → when `json`, both `publicHeaders` (as a JSON object) and `publicBody` (selected body keys) may be returned
+  - Returns Node `{ publicHeaders?, publicBody? }`; Python returns a merged dict in direct seal tests; helpers may suppress return for consistency.
 - Server must compare sidecar values to those reconstructed from AAD. Mismatch → `400 AAD_MISMATCH`.
 - Sidecar keys must be present in AAD; attempts to expose missing keys → `400 PUBLIC_KEY_NOT_IN_AAD`.
 
@@ -16,7 +15,7 @@ The `httpResponseCode` parameter in `seal()` controls sidecar behavior and enfor
 - **Other responses**: Can emit both core x402 headers and approved extensions as requested.
 - **Client requests**: Can emit X-PAYMENT headers for payment verification
 
-### Header Usage Rules
+### Header Usage Rules (Transport)
 
 - **"X-Payment"**: Client requests with payment (no httpResponseCode)
 - **"X-Payment-Response"**: Server responses with payment receipt (requires httpResponseCode: 200)
@@ -32,43 +31,15 @@ This ensures that 402 Payment Required responses don't leak payment information 
 
 ## Entity Management
 
-### Constructor Defaults
+Removed. Use explicit `x402SecureTransport` instances per operation.
 
-Set defaults at HPKE creation time for consistent behavior:
-
-```typescript
-const hpke = createHpke({
-  namespace: "myapp",
-  x402: { header: "X-Payment", payload: { /* default payment */ } },
-  app: { traceId: "default", model: "gpt-4" },
-  publicEntities: "all" // or specific list
-});
-```
-
-### Per-Call Overrides
-
-Override defaults per operation:
-
-```typescript
-const { envelope, publicHeaders } = await hpke.seal({
-  // ... other params
-  x402: { /* override constructor default */ },
-  app: { /* merge with constructor default */ },
-  public: {
-    makeEntitiesPublic: ["X-PAYMENT", "X-402-Routing"], // specific entities
-    makeEntitiesPrivate: ["traceId"], // hide specific entities
-    as: "json" // JSON sidecar instead of headers
-  }
-});
-```
+Removed. Use `makeEntitiesPublic` only; sidecar format is implicit.
 
 ## Sidecar Generation
 
 Sidecars are generated based on the `public` parameter in the `seal` method.
 
-### Generic Request/Response
-
-If using the legacy `request`/`response` fields, `makeEntitiesPublic: ["request"|"response"]` returns the object as `publicJsonBody` (Node) or is suppressed by helpers to keep return signatures consistent. Canonically, use `publicBody` with named body keys via `makeEntitiesPublic` and `as: "json"`.
+Generic request/response are represented via `TransportType.OTHER_REQUEST`/`OTHER_RESPONSE`. Use `makeEntitiesPublic` with body keys to project a JSON sidecar.
 
 ```typescript
 // Seal a request and expose it as a JSON body

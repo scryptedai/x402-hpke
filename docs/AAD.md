@@ -17,8 +17,8 @@ AAD bytes = UTF‑8 of: `<ns>|v1|` + json(headers_array) + `|` + json(body_objec
 ### headers_array
 
 - Array of normalized header entries: `{ header: string, value: object, ...extras }`
-- Header names are canonicalized (core: `X-Payment`, `X-Payment-Response`, or `""`); extensions are case-normalized and must be approved.
-- Entries are sorted by `header` (case-insensitive).
+- For unified transport, header names are included verbatim in AAD; values are deep-canonicalized.
+- Entries are sorted by `header` (case-insensitive) for stability.
 
 ### body_object
 

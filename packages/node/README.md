@@ -16,31 +16,13 @@ npm install @x402-hpke/node@next
 ## Quickstart
 
 ```ts
-import { createHpke, generateKeyPair, buildX402Headers } from "@x402-hpke/node";
+import { createHpke, generateKeyPair } from "@x402-hpke/node";
 
 const hpke = createHpke({ namespace: "myapp" });
 const { publicJwk, privateJwk } = await generateKeyPair();
 
-const x402 = {
-  header: "X-Payment",
-  payload: {
-    invoiceId: "inv_1",
-    chainId: 8453,
-    tokenContract: "0x" + "a".repeat(40),
-    amount: "1000",
-    recipient: "0x" + "b".repeat(40),
-    txHash: "0x" + "c".repeat(64),
-    expiry: 9999999999,
-    priceHash: "0x" + "d".repeat(64),
-  }
-};
-
-const { envelope, publicHeaders } = await hpke.seal({
-  kid: "kid1",
-  recipientPublicJwk: publicJwk,
-  x402,
-  public: { makeEntitiesPublic: ["X-PAYMENT"], as: "headers" },
-});
+// Use higher-level helpers or transport API; sidecar is private-by-default
+const { envelope, publicHeaders } = await createPayment(hpke, { paymentData: { invoiceId: "inv_1" }, recipientPublicJwk: publicJwk, kid: "kid1" }, true);
 
 const opened = await hpke.open({
   recipientPrivateJwk: privateJwk,

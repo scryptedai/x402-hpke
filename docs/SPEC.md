@@ -9,7 +9,7 @@
   - AEAD (Authenticated Encryption with Associated Data, envelope): ChaCha20-Poly1305 (96-bit nonce, libsodium `*_ietf`)
   - Suite ID: `X25519-HKDF-SHA256-CHACHA20POLY1305`
   - Envelope MAY include `suite` field; APIs expose `hpke.suite` and `hpke.version`.
-- AAD (Additional Authenticated Data) is canonical; payload is opaque. Public sidecar is a projection of AAD; mismatch rejected.
+- AAD (Additional Authenticated Data) is canonical; transport is private-by-default. Optional sidecar is a projection of AAD; mismatch rejected.
 - JWKS (JSON Web Key Set): HTTPS-only fetch with Cache-Control/Expires; selection by `kid`.
 - Interop: Node seals ↔ Python opens and vice versa. Cross-language tests included.
 
@@ -23,17 +23,16 @@
 | Send a Payment Response        | createPaymentResponse   | yes  | no     | yes    |
 | Send some other Response       | createResponse          | no   | no     | yes    |
 
-## Canonical data model
+## Canonical data model (Unified Transport)
 
-There are two kinds of inputs to sealing:
+All sealing uses a single transport model encapsulated by `x402SecureTransport`:
 
-- `privateHeaders` (optional): array of header entries `{ header: string, value: object, ...extras }`
-  - Core headers: `"X-Payment"`, `"X-Payment-Response"`, and the empty string `""`.
-  - Approved extension headers: e.g., `X-402-Routing`, `X-402-Limits`, `X-402-Acceptable`, `X-402-Metadata`, `X-402-Security`.
-  - Headers are unique by case-insensitive name.
-- `privateBody` (optional): JSON object carrying application payload (generic request/response or confidential body).
+- Core header (optional): one of `X-PAYMENT`, `X-PAYMENT-RESPONSE`, or empty `""` for 402
+- Body (object): application payload; for `PAYMENT`/`PAYMENT_RESPONSE`, body is `{}`
+- Extensions (optional): list of `{ header, value }` entries (approved headers only)
+- HTTP response code (optional): validated based on transport type
 
-Collision rule: top-level keys in `privateBody` MUST NOT equal any header name (case-insensitive).
+Top-level body keys are deep-canonicalized and MUST NOT collide with header names.
 
 ### Core x402 header rules
 
@@ -64,7 +63,7 @@ Example x402 object:
 }
 ```
 
-## API Interface
+## API Interface (simplified)
 
 ### HPKE Creation
 
@@ -86,56 +85,25 @@ hpke = create_hpke(
 )
 ```
 
-### Sealing Payloads
+### Sealing
 
-The canonical sealing inputs are `privateHeaders` and `privateBody`. For backwards-compatibility, helpers and legacy fields (`request`, `response`, `x402`) are supported and internally mapped to the canonical model.
+- Node: `hpke.seal({ kid, recipientPublicJwk, transport, makeEntitiesPublic? })`
+- Python: `hpke.seal(kid=..., recipient_public_jwk=..., transport=..., make_entities_public=None)`
 
-#### Generic Request/Response
-
-```typescript
-// Seal a request (legacy convenience)
-const { envelope, publicJsonBody } = await hpke.seal({
-  request: { action: "getData", params: { id: 123 } },
-  public: { makeEntitiesPublic: ["request"], as: "json" }
-});
-// Canonical equivalent
-const { envelope, publicBody } = await hpke.seal({
-  privateBody: { action: "getData", params: { id: 123 } },
-  public: { makeEntitiesPublic: ["action", "params"], as: "json" }
-});
-```
-
-If `makeEntitiesPublic` includes `"request"` or `"response"` using the legacy path, Node returns `publicJsonBody`. Canonically, use `publicBody` with selected body keys.
-
-#### Payment Protocol (x402)
-
-For convenience, `x402` continues to be supported and maps to `privateHeaders`.
-
-```typescript
-// Seal X-Payment (maps to privateHeaders)
-const { envelope, publicHeaders } = await hpke.seal({
-  x402: { header: "X-Payment", payload: {/*...*/} },
-  public: { makeEntitiesPublic: ["X-PAYMENT"] }
-});
-```
+The `transport` object is an instance of `x402SecureTransport`.
 
 ### Sidecar Generation
 
-The sidecar is a projection from the canonical inputs:
+The sidecar is a projection from AAD and is private-by-default:
 
-- `publicHeaders`: for any header names selected via `makeEntitiesPublic`, values are emitted as compact canonical JSON strings. Core headers use upper-case keys `X-PAYMENT` and `X-PAYMENT-RESPONSE`.
-- `publicBody`: for any top-level body keys selected via `makeEntitiesPublic`, those fields are emitted in a JSON object (only when `as: "json"`).
-
-Controls:
-- `makeEntitiesPublic: "all" | "*" | string[]` — choose header names and/or body keys.
-- `makeEntitiesPrivate: string[]` — subtract from the public set.
-- `as: "headers" | "json"` — when `json`, `publicHeaders` is returned as a JSON object and `publicBody` is available; when `headers`, only headers are emitted.
+- `makeEntitiesPublic: "all" | "*" | string[]` — choose header names (verbatim) and/or body keys
+- Returns:
+  - Node: `{ publicHeaders?, publicBody? }`
+  - Python: dict of selected headers/body merged; helpers suppress direct return of public body for generic req/resp
 
 ### HTTP Response Code Behavior
 
-The `httpResponseCode` parameter controls sidecar behavior and enforces header validation:
-
-- 402 responses: Never emit core x402 headers in sidecar; approved extensions may be emitted; body projections may be emitted.
+- 402 responses: Never emit core x402 headers in sidecar; only body keys/extensions may be emitted.
 - Other responses: May emit core x402 headers and approved extensions as requested.
 - Client requests: May emit `X-PAYMENT` for verification.
 

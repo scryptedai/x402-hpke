@@ -20,7 +20,7 @@ npx tsx server.ts
 File: `examples/client-node/index.ts`
 
 - Seals payload + AAD.
-- Public sidecar: `x402Headers: true` and `appHeaderAllowlist`.
+- Public sidecar: use `makeEntitiesPublic` via helpers or direct seal; private by default.
 
 Run:
 ```bash
@@ -57,7 +57,7 @@ const { envelope, publicHeaders } = await createPayment(
   true // isPublic
 );
 
-const { plaintext, x402 } = await hpke.open({
+const { plaintext, headers, body } = await hpke.open({
   recipientPrivateJwk: privateJwk,
   envelope,
   expectedKid: "kid-2025",
