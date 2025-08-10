@@ -172,57 +172,39 @@ env, headers = create_payment(
 )
 ```
 
-## Core Concepts
+## Unified Transport and Helpers (recommended)
 
-The `x402-hpke` library provides a flexible framework for secure, authenticated messaging. The `seal` method is the heart of the library, accepting one of three mutually exclusive payload types:
+Use the helpers (`createPayment`, `createPaymentResponse`, `createPaymentRequired`, `createRequest`, `createResponse`) for almost all cases. They construct an internal `x402SecureTransport` for you and call `seal()` with the right shape, so you don’t need to reason about headers vs body or status codes.
 
-- **`request`**: For generic client-to-server messages.
-- **`response`**: For generic server-to-client messages.
-- **`x402`**: For specialized `402` payment protocol messages.
+High-level flows typically look like:
+- Quote (server → client): `createPaymentRequired` (body contains quote data; no core x402 headers exposed in sidecar for 402)
+- Client payment (client → server): `createPayment` (core header `X-PAYMENT`)
+- Receipt (server → client): `createPaymentResponse` (core header `X-PAYMENT-RESPONSE`, auto HTTP 200)
+- Generic app data: `createRequest` / `createResponse`
 
-### Typical 402 payment flows
+### What `x402SecureTransport` does (auto-mapping/routing)
+The unified transport model enforces validation and maps your content to headers/body based on type:
+- PAYMENT: header = `X-PAYMENT`, value = your content; body = `{}`; `httpResponseCode` not allowed
+- PAYMENT_RESPONSE: header = `X-PAYMENT-RESPONSE`, value = your content; body = `{}`; `httpResponseCode` auto-set to 200
+- PAYMENT_REQUIRED: header = `""` (suppressed), body = your content; `httpResponseCode` auto-set to 402
+- OTHER_REQUEST: header = none, body = your content; `httpResponseCode` not allowed
+- OTHER_RESPONSE: header = none, body = your content; `httpResponseCode` required and must not be 402
 
-Most production integrations center on the x402 flows. At a high level:
+Headers and body are bound into AAD with header names verbatim and deep-canonicalized values for deterministic interop. Sidecar is private-by-default and only contains entities explicitly selected via `makeEntitiesPublic`.
 
-- Price quote (server → client): server returns a 402 Payment Required using `createPaymentRequired` (x402 header is empty, body carries quote details)
-- Client payment (client → server): client submits an X-Payment using `createPayment`
-- Settlement/receipt (server → client): server returns X-Payment-Response using `createPaymentResponse`
+### Low-level (optional)
+If you need maximum control, you can construct the transport directly and call `seal`:
 
-You will still use the generic surfaces when needed:
-- `createRequest` to initiate a non-payment request (e.g., ask for a price or send opaque app payload)
-- `createResponse` to return non-402 responses (e.g., 200/4xx error details that are not part of x402)
+```ts
+import { x402SecureTransport } from "@x402-hpke/node";
 
-### Generic Request/Response
-
-Request/response are utility surfaces used to initiate a quote/request and to handle non-402 responses. They provide a simple API for sealing opaque app data when you are not sending an x402 header.
-
-```typescript
-// Seal a request
-const { envelope, publicJsonBody } = await hpke.seal({
-  request: { action: "getData", params: { id: 123 } },
-  // ... other seal params
-  public: { makeEntitiesPublic: ["request"] }
-});
-
-// The 'publicJsonBody' will be the raw 'request' object,
-// which you can send as the body of your HTTP request.
-```
-
-### Payment Protocol (`x402`)
-
-For `402` payment flows, the `x402` payload provides a structured way to handle `X-Payment` and `X-Payment-Response` headers. The library enforces the correct usage based on the `httpResponseCode`.
-
-```typescript
-// Seal an X-Payment header
+const t = new x402SecureTransport("PAYMENT", { payload: { invoiceId: "inv_123" } });
 const { envelope, publicHeaders } = await hpke.seal({
-  x402: {
-    header: "X-Payment",
-    payload: { /* ... */ }
-  },
-  // ... other seal params
-  public: { makeEntitiesPublic: ["X-Payment"] }
+  kid: "kid1",
+  recipientPublicJwk: publicJwk,
+  transport: t,
+  makeEntitiesPublic: ["X-PAYMENT"], // optional
 });
-// 'publicHeaders' will contain the 'X-Payment' header
 ```
 
 ## Core x402 Object Structure
@@ -271,12 +253,10 @@ Example x402 object:
 
 ## Transport Sidecar (Headers/JSON)
 
-- **Default**: No transport headers are emitted; all metadata is bound inside AAD
-- **Optional**: Use `public` in `seal()` to emit sidecars:
-  - `makeEntitiesPublic: "all"` → emits all available entities (core payment + approved extensions)
-  - `makeEntitiesPublic: ["X-PAYMENT", "X-402-Routing"]` → emits specific entities
-  - `makeEntitiesPrivate: ["traceId"]` → subtracts entities from the public set
-  - `as: "headers"` (default) or `"json"` → controls sidecar format
+- **Default**: Nothing is exposed; all metadata is AAD-bound.
+- **Optional**: Provide `makeEntitiesPublic: "all" | "*" | string[]` (via helpers or direct `seal`) to project selected entities:
+  - For headers, you’ll get `publicHeaders` with values as compact JSON strings
+  - For body keys, you’ll get `publicBody` with selected keys
 
 ### HTTP Response Code Behavior
 
@@ -294,20 +274,8 @@ Example x402 object:
 
 Server must rebuild AAD from sidecar and require byte-for-byte equality. Mismatch → `400 AAD_MISMATCH`.
 
-## Constructor Defaults
-
-Set defaults at HPKE creation time for consistent behavior across all operations:
-
-```ts
-const hpke = createHpke({
-  namespace: "myapp",
-  x402: { header: "X-Payment", payload: { /* default payment */ } },
-  app: { traceId: "default", model: "gpt-4" },
-  publicEntities: "all" // or specific list
-});
-```
-
-These defaults are merged with per-call values, with per-call taking precedence.
+## Notes
+Helpers are the canonical way to use this library. They create the transport, enforce validation, and keep everything private unless you explicitly request sidecar exposure.
 
 ## JWKS Utilities
 
