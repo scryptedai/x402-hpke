@@ -35,12 +35,11 @@
       "expected_error": "INVALID_RESPONSE_PARAMS"
     },
     {
-      "name": "invalid-response-params-402",
+      "name": "invalid-response-params-no-code",
       "ns": "myapp",
-      "kid": "kid-res-inv-402",
+      "kid": "kid-res-inv-no-code",
       "response": { "status": "ok" },
-      "http_response_code": 402,
-      "plaintext_b64u": "bmVnLXJlcy1pbnYtNDAy",
+      "plaintext_b64u": "bmVnLXJlcy1pbnYtbm8tY29kZQ",
       "expected_error": "INVALID_RESPONSE_PARAMS"
     },
     {

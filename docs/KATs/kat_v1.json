@@ -41,6 +41,33 @@
       "public": ["request"],
       "plaintext_b64u": "anNvbi1zaWRlY2Fy",
       "eph_seed32_b64u": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA"
+    },
+    {
+      "name": "response-402-private",
+      "ns": "myapp",
+      "kid": "kid-res-402-private",
+      "response": {
+        "status": "payment-required",
+        "cost": "1000",
+        "currency": "USD"
+      },
+      "http_response_code": 402,
+      "plaintext_b64u": "cGF5bWVudC1yZXF1aXJlZA",
+      "eph_seed32_b64u": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMA"
+    },
+    {
+      "name": "response-200-public-json",
+      "ns": "myapp",
+      "kid": "kid-res-200-public",
+      "response": {
+        "status": "ok",
+        "data": {"a": 1}
+      },
+      "http_response_code": 200,
+      "sidecar_as": "json",
+      "public": ["response"],
+      "plaintext_b64u": "b2s",
+      "eph_seed32_b64u": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQA"
     }
   ]
 }
