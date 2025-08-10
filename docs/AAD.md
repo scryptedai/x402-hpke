@@ -37,7 +37,7 @@ The `primary_payload` is one of the following:
 
 ### HTTP Response Code Validation
 
-- **402 responses**: `x402.header` MUST be `""` (empty) - never "X-Payment" or "X-Payment-Response"
+- **402 responses**: Either use a generic `response` with `httpResponseCode: 402` (recommended), or an `x402` object with empty header `""`.
 - **X-Payment**: No `httpResponseCode` should be set (client requests)
 - **X-Payment-Response**: Requires `httpResponseCode: 200`
 

@@ -53,7 +53,7 @@
       },
       "http_response_code": 402,
       "plaintext_b64u": "cGF5bWVudC1yZXF1aXJlZA",
-      "eph_seed32_b64u": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMA"
+      "eph_seed32_b64u": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEA"
     },
     {
       "name": "response-200-public-json",
@@ -67,7 +67,7 @@
       "sidecar_as": "json",
       "public": ["response"],
       "plaintext_b64u": "b2s",
-      "eph_seed32_b64u": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQA"
+      "eph_seed32_b64u": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA"
     }
   ]
 }

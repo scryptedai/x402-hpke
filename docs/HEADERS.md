@@ -168,17 +168,30 @@ public: {
 ```
 
 ### 402 response behavior
+
+For 402 Payment Required, the library supports two equivalent patterns:
+
+1) Recommended (helpers use this): generic `response` payload with `httpResponseCode: 402`.
+
 ```typescript
-// 402 responses only emit extensions, never payment headers
+// Using a generic response for 402
 const { envelope, publicHeaders } = await hpke.seal({
-  // ... other params
+  response: { status: "payment-required", cost: "1000", currency: "USD" },
   httpResponseCode: 402,
-  x402: { header: "", payload: { /* confidential data */ } }, // Must be empty header
-  public: {
-    makeEntitiesPublic: ["X-402-Routing", "X-402-Limits"]
-  }
+  // Sidecar for 402 never includes X-PAYMENT headers; only approved extensions may be emitted
+  public: { makeEntitiesPublic: ["X-402-Routing", "X-402-Limits"], as: "headers" }
 });
-// publicHeaders will only contain extension headers, no X-PAYMENT
+// publicHeaders will only contain approved extension headers (if requested)
+```
+
+2) Also valid: `x402` with empty header for 402 (no X-PAYMENT/X-PAYMENT-RESPONSE). This remains supported for interop.
+
+```typescript
+const { envelope, publicHeaders } = await hpke.seal({
+  x402: { header: "", payload: { /* confidential */ } },
+  httpResponseCode: 402,
+  public: { makeEntitiesPublic: ["X-402-Routing"], as: "headers" }
+});
 ```
 
 ### X-Payment-Response with 200 status
