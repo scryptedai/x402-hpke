@@ -45,6 +45,7 @@ export { canonicalAad, buildCanonicalAad, validateX402Core } from "./aad.js";
 export { generateKeyPair, selectJwkFromJwks, generatePublicJwk, generateJwks, generateSingleJwks } from "./keys.js";
 export * from "./payment.js";
 export * from "./extensions.js";
+export * from "./helpers.js";
 export { sealChunkXChaCha, openChunkXChaCha } from "./streaming.js";
 export * as X402Errors from "./errors.js";
 

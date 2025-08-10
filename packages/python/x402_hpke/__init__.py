@@ -9,6 +9,7 @@ from .aad import canonical_aad, build_canonical_aad
 from .keys import generate_keypair, generate_public_jwk
 from .streaming import seal_chunk_xchacha, open_chunk_xchacha
 from .extensions import APPROVED_EXTENSION_HEADERS, is_approved_extension_header, canonicalize_extension_header
+from .helpers import create_payment_required
 
 __all__ = [
     "create_hpke",
@@ -25,4 +26,5 @@ __all__ = [
     "APPROVED_EXTENSION_HEADERS",
     "is_approved_extension_header",
     "canonicalize_extension_header",
+    "create_payment_required",
 ]
