@@ -7,6 +7,7 @@ APPROVED_EXTENSION_HEADERS: List[str] = [
     "X-402-Limits",
     "X-402-Acceptable",
     "X-402-Metadata",
+    "X-402-Security",
 ]
 
 
@@ -14,6 +15,13 @@ class X402Extension(TypedDict, total=False):
     header: str
     payload: Dict[str, Any]
     # Additional keys allowed
+
+
+class X402SecurityPayload(TypedDict, total=False):
+    jwks_url: str  # JWKS endpoint URL
+    jwks: Dict[str, Any]  # Inline JWKS
+    min_key_strength: int  # Minimum key size
+    allowed_suites: List[str]  # Allowed cipher suites
 
 
 def is_approved_extension_header(header: str) -> bool:

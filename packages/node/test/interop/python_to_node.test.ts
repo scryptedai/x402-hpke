@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 await test("python seals -> node opens", async () => {
-  const hpke = createHpke({ namespace: "myapp", x402: { header: "X-Payment", payload: { compat: true } } });
+  const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk, privateJwk } = await generateKeyPair();
-  const x402 = { header: "X-Payment", payload: { invoiceId: "inv_py" } };
+  const requestPayload = { action: "from_python" };
   const payload = new TextEncoder().encode("from_python");
   const pyRoot = path.resolve(__dirname, "../../../python");
   const req = {
@@ -18,7 +18,7 @@ await test("python seals -> node opens", async () => {
     kid: "kidPY",
     recipient_public_jwk: publicJwk,
     plaintext_b64u: Buffer.from(payload).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"),
-    x402,
+    request: requestPayload,
   };
   const res = spawnSync("poetry", ["run", "python", "scripts/seal.py"], {
     cwd: pyRoot,
@@ -30,5 +30,5 @@ await test("python seals -> node opens", async () => {
 
   const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kidPY" });
   assert.equal(new TextDecoder().decode(opened.plaintext), "from_python");
-  assert.equal(opened.x402.invoiceId, x402.invoiceId);
+  assert.deepStrictEqual(opened.request, requestPayload);
 });

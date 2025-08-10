@@ -64,48 +64,35 @@ import { createHpke, generateKeyPair } from "@x402-hpke/node";
 
 const hpke = createHpke({ 
   namespace: "myapp",
-  // Optional: set defaults for all operations
-  x402: { header: "X-Payment", payload: { invoiceId: "default" } },
-  app: { traceId: "default" },
-  publicEntities: "all" // or ["X-PAYMENT", "X-402-Routing"] for specific headers
 });
 
 const { publicJwk, privateJwk } = await generateKeyPair();
 
-const x402 = {
-  header: "X-Payment",
-  payload: {
-    invoiceId: "inv_1",
-    chainId: 8453,
-    tokenContract: "0x" + "a".repeat(40),
-    amount: "1000",
-    recipient: "0x" + "b".repeat(40),
-    txHash: "0x" + "c".repeat(64),
-    expiry: 9999999999,
-    priceHash: "0x" + "d".repeat(64),
-  }
-};
-
-const payload = new TextEncoder().encode("hello");
-const { envelope, publicHeaders } = await hpke.seal({
-  kid: "kid1",
+// Generic request
+const { envelope, publicJsonBody } = await hpke.seal({
+  request: { action: "getUserProfile", userId: "user-123" },
   recipientPublicJwk: publicJwk,
-  plaintext: payload,
-  x402,
-  app: { traceId: "req_123" },
-  public: { 
-    makeEntitiesPublic: "all", // or ["X-PAYMENT", "X-402-Routing"]
-    makeEntitiesPrivate: ["traceId"], // optionally hide specific entities
-    as: "headers" // or "json"
-  },
-  httpResponseCode: 200 // controls sidecar behavior (402 = no payment headers)
+  kid: "client-key-1",
+  plaintext: new TextEncoder().encode("hello"),
+  public: { makeEntitiesPublic: ["request"] }
 });
 
-const opened = await hpke.open({ 
+const { plaintext, request } = await hpke.open({ 
   recipientPrivateJwk: privateJwk, 
-  envelope, 
-  expectedKid: "kid1", 
-  publicHeaders 
+  envelope,
+  expectedKid: "server-key-1"
+});
+
+// Payment request
+const { envelope: paymentEnvelope, publicHeaders } = await hpke.seal({
+  x402: {
+    header: "X-Payment",
+    payload: { /* ...EVM payment details... */ }
+  },
+  recipientPublicJwk: publicJwk,
+  kid: "client-key-1",
+  plaintext: new TextEncoder().encode("hello"),
+  public: { makeEntitiesPublic: ["X-Payment"] }
 });
 ```
 
@@ -115,59 +102,96 @@ const opened = await hpke.open({
 from x402_hpke import create_hpke
 from x402_hpke.keys import generate_keypair
 
-hpke = create_hpke(
-    namespace="myapp",
-    # Optional: set defaults for all operations
-    x402={"header": "X-Payment", "payload": {"invoiceId": "default"}},
-    app={"traceId": "default"},
-    public_entities="all"  # or ["X-PAYMENT", "X-402-Routing"] for specific headers
-)
+hpke = create_hpke(namespace="myapp")
 
 PUB, PRIV = generate_keypair()
 
-x402 = {
-    "header": "X-Payment",
-    "payload": {
-        "invoiceId": "inv_1",
-        "chainId": 8453,
-        "tokenContract": "0x" + "a"*40,
-        "amount": "1000",
-        "recipient": "0x" + "b"*40,
-        "txHash": "0x" + "c"*64,
-        "expiry": 9999999999,
-        "priceHash": "0x" + "d"*64,
-    }
-}
-
-payload = b"hello"
-
-env, headers = hpke.seal(
-    kid="kid1", 
-    recipient_public_jwk=PUB, 
-    plaintext=payload, 
-    x402=x402, 
-    app={"traceId": "req_123"},
-    public={
-        "makeEntitiesPublic": "all",  # or ["X-PAYMENT", "X-402-Routing"]
-        "makeEntitiesPrivate": ["traceId"],  # optionally hide specific entities
-        "as": "headers"  # or "json"
-    },
-    http_response_code=200  # controls sidecar behavior (402 = no payment headers)
+# Generic request
+env, body = hpke.seal(
+    request={"action": "getUserProfile", "userId": "user-123"},
+    recipient_public_jwk=PUB,
+    kid="client-key-1",
+    plaintext=b"hello",
+    public={"makeEntitiesPublic": ["request"]}
 )
 
-pt, x, app = hpke.open(
+pt, req = hpke.open(
     recipient_private_jwk=PRIV, 
-    envelope=env, 
-    expected_kid="kid1", 
-    public_headers=headers
+    envelope=env,
+    expected_kid="server-key-1"
 )
+
+# Payment request
+env, headers = hpke.seal(
+    x402={
+        "header": "X-Payment",
+        "payload": { /* ...EVM payment details... */ }
+    },
+    recipient_public_jwk=PUB,
+    kid="client-key-1",
+    plaintext=b"hello",
+    public={"makeEntitiesPublic": ["X-Payment"]}
+)
+```
+
+## Core Concepts
+
+The `x402-hpke` library provides a flexible framework for secure, authenticated messaging. The `seal` method is the heart of the library, accepting one of three mutually exclusive payload types:
+
+- **`request`**: For generic client-to-server messages.
+- **`response`**: For generic server-to-client messages.
+- **`x402`**: For specialized `402` payment protocol messages.
+
+### Generic Request/Response
+
+For most use cases, you'll use the `request` and `response` payloads. This provides a simple and intuitive API for securing your data.
+
+```typescript
+// Seal a request
+const { envelope, publicJsonBody } = await hpke.seal({
+  request: { action: "getData", params: { id: 123 } },
+  // ... other seal params
+  public: { makeEntitiesPublic: ["request"] }
+});
+
+// The 'publicJsonBody' will be the raw 'request' object,
+// which you can send as the body of your HTTP request.
+```
+
+### Payment Protocol (`x402`)
+
+For `402` payment flows, the `x402` payload provides a structured way to handle `X-Payment` and `X-Payment-Response` headers. The library enforces the correct usage based on the `httpResponseCode`.
+
+```typescript
+// Seal an X-Payment header
+const { envelope, publicHeaders } = await hpke.seal({
+  x402: {
+    header: "X-Payment",
+    payload: { /* ... */ }
+  },
+  // ... other seal params
+  public: { makeEntitiesPublic: ["X-Payment"] }
+});
+// 'publicHeaders' will contain the 'X-Payment' header
 ```
 
 ## Core x402 Object Structure
 
 The x402 core object must include:
-- `header`: "X-Payment" or "X-Payment-Response" (case-insensitive)
-- `payload`: a non-empty object containing payment details
+- `header`: "X-Payment", "X-Payment-Response", or "" (empty for confidential requests)
+- `payload`: a non-empty object containing payment details or confidential data
+
+### Header Usage Rules
+
+- **"X-Payment"**: Client requests with payment (no httpResponseCode)
+- **"X-Payment-Response"**: Server responses with payment receipt (requires httpResponseCode: 200)
+- **"" (empty)**: Confidential requests/responses (402 or other status codes)
+
+### HTTP Response Code Validation
+
+- **402 responses**: `x402.header` MUST be `""` (empty) - never "X-Payment" or "X-Payment-Response"
+- **X-Payment**: No `httpResponseCode` should be set (client requests)
+- **X-Payment-Response**: Requires `httpResponseCode: 200`
 
 Example x402 object:
 ```json
@@ -213,6 +237,7 @@ Example x402 object:
 - `X-402-Limits` — rate limiting and quotas  
 - `X-402-Acceptable` — content labels and jurisdiction info
 - `X-402-Metadata` — arbitrary key-value metadata
+- `X-402-Security` — security requirements and key management
 
 Server must rebuild AAD from sidecar and require byte-for-byte equality. Mismatch → `400 AAD_MISMATCH`.
 
@@ -233,9 +258,30 @@ These defaults are merged with per-call values, with per-call taking precedence.
 
 ## JWKS Utilities
 
-- Node: `fetchJwks(url)`, `setJwks(url, jwks)`, `selectJwkFromJwks(jwks, kid)`
-- Python: `fetch_jwks(url)`, `set_jwks(url, jwks)`, `select_jwk(kid, jwks, url)`
+- Node: `fetchJwks(url)`, `setJwks(url, jwks)`, `selectJwkFromJwks(jwks, kid)`, `generateJwks(keys)`, `generateSingleJwks(jwk, kid)`
+- Python: `fetch_jwks(url)`, `set_jwks(url, jwks)`, `select_jwk(kid, jwks, url)`, `generate_jwks(keys)`, `generate_single_jwks(jwk, kid)`
 - HTTPS-only, basic caching using Cache-Control/Expires, and kid-based selection.
+- JWKS generation utilities for creating inline JWKS in X-402-Security extensions.
+
+## X-402-Security Extension
+
+The `X-402-Security` extension allows clients and servers to negotiate security requirements:
+
+```typescript
+// Example X-402-Security payload
+{
+  jwksUrl: "https://example.com/.well-known/jwks.json",
+  // OR inline JWKS
+  jwks: generateJwks([{ jwk: publicKey, kid: "key1" }]),
+  minKeyStrength: 256,
+  allowedSuites: ["X25519", "P-256"]
+}
+```
+
+This enables:
+- **Key Discovery**: Share JWKS endpoints or inline keys
+- **Security Negotiation**: Specify minimum key strength and allowed algorithms
+- **Client Key Rotation**: Provide fresh keys for each request
 
 ## Streaming (XChaCha20-Poly1305)
 

@@ -12,7 +12,13 @@ JWKS utilities provide secure key management and rotation capabilities for x402-
 ## Node.js Implementation
 
 ```typescript
-import { fetchJwks, setJwks, selectJwkFromJwks } from "@x402-hpke/node";
+import { 
+  fetchJwks, 
+  setJwks, 
+  selectJwkFromJwks, 
+  generateJwks, 
+  generateSingleJwks 
+} from "@x402-hpke/node";
 
 // Fetch JWKS from remote endpoint
 const jwks = await fetchJwks("https://example.com/.well-known/jwks.json");
@@ -25,12 +31,27 @@ const jwk = selectJwkFromJwks(jwks, "kid1");
 if (!jwk) {
   throw new Error("Key not found");
 }
+
+// Generate JWKS from multiple keys
+const jwks = generateJwks([
+  { jwk: publicKey1, kid: "key1" },
+  { jwk: publicKey2, kid: "key2" }
+]);
+
+// Generate JWKS from single key
+const jwks = generateSingleJwks(publicKey, "key1");
 ```
 
 ## Python Implementation
 
 ```python
-from x402_hpke import fetch_jwks, set_jwks, select_jwk
+from x402_hpke import (
+    fetch_jwks, 
+    set_jwks, 
+    select_jwk, 
+    generate_jwks, 
+    generate_single_jwks
+)
 
 # Fetch JWKS from remote endpoint
 jwks = fetch_jwks("https://example.com/.well-known/jwks.json")
@@ -42,6 +63,15 @@ set_jwks("https://example.com/.well-known/jwks.json", jwks)
 jwk = select_jwk("kid1", jwks, "https://example.com/.well-known/jwks.json")
 if not jwk:
     raise ValueError("Key not found")
+
+# Generate JWKS from multiple keys
+jwks = generate_jwks([
+    (public_key1, "key1"),
+    (public_key2, "key2")
+])
+
+# Generate JWKS from single key
+jwks = generate_single_jwks(public_key, "key1")
 ```
 
 ## JWKS Structure
@@ -76,6 +106,77 @@ The JWKS follows RFC 7517 format:
 - **alg**: Algorithm ("ECDH-ES" for ECDH key agreement)
 - **exp**: Expiration timestamp
 - **nbf**: Not-before timestamp
+
+## JWKS Generation Utilities
+
+### Single Key JWKS
+
+```typescript
+// Node.js
+import { generateSingleJwks, generateKeyPair } from "@x402-hpke/node";
+
+const { publicJwk } = await generateKeyPair();
+const jwks = generateSingleJwks(publicJwk, "my-key-1");
+
+// Result:
+// {
+//   "keys": [{
+//     "kty": "OKP",
+//     "crv": "X25519", 
+//     "x": "base64url-encoded-key",
+//     "kid": "my-key-1",
+//     "use": "enc",
+//     "alg": "ECDH-ES"
+//   }]
+// }
+```
+
+### Multiple Keys JWKS
+
+```typescript
+// Node.js
+import { generateJwks, generateKeyPair } from "@x402-hpke/node";
+
+const { publicJwk: key1 } = await generateKeyPair();
+const { publicJwk: key2 } = await generateKeyPair();
+
+const jwks = generateJwks([
+  { jwk: key1, kid: "key-1" },
+  { jwk: key2, kid: "key-2" }
+]);
+```
+
+## Integration with X-402-Security Extension
+
+The JWKS generation utilities are designed to work seamlessly with the X-402-Security extension:
+
+```typescript
+import { createHpke, generateSingleJwks, generateKeyPair } from "@x402-hpke/node";
+
+const hpke = createHpke({ namespace: "myapp" });
+
+// Generate a fresh key for this request
+const { publicJwk, privateJwk } = await generateKeyPair();
+const jwks = generateSingleJwks(publicJwk, "request-key-1");
+
+// Include in X-402-Security extension
+const { envelope, publicHeaders } = await hpke.seal({
+  kid: "sender-kid",
+  recipientPublicJwk: recipientJwk,
+  plaintext: Buffer.from("hello"),
+  x402: { header: "X-Payment", payload: { /* payment details */ } },
+  app: {
+    extensions: [{
+      header: "X-402-Security",
+      payload: {
+        jwks: jwks,
+        minKeyStrength: 256,
+        allowedSuites: ["X25519"]
+      }
+    }]
+  }
+});
+```
 
 ## Caching Behavior
 
@@ -173,6 +274,13 @@ try {
 - Monitor for unauthorized access attempts
 - Use short-lived keys when possible
 
+### 4. X-402-Security Integration
+
+- Use inline JWKS for single-request key rotation
+- Provide JWKS URLs for persistent key discovery
+- Specify security requirements (minKeyStrength, allowedSuites)
+- Rotate keys frequently for high-security applications
+
 ## Testing
 
 ```typescript
@@ -191,6 +299,9 @@ const mockJwks = {
 };
 
 setJwks("https://test.example.com/.well-known/jwks.json", mockJwks);
+
+// Generate test JWKS
+const testJwks = generateSingleJwks(mockJwks.keys[0], "test-kid");
 ```
 
 ## Integration with HPKE

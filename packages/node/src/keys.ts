@@ -1,4 +1,13 @@
 import sodium from "libsodium-wrappers";
+import {
+  InvalidEnvelopeError,
+  JwksHttpsRequiredError,
+  JwksHttpError,
+  JwksInvalidError,
+  JwksKeyInvalidError,
+  JwksKeyUseInvalidError,
+  JwksKidInvalidError
+} from "./errors.js";
 
 export type OkpJwk = {
   kty: "OKP";
@@ -36,12 +45,12 @@ export function selectJwkFromJwks(jwks: { keys: OkpJwk[] }, kid: string): OkpJwk
 }
 
 export function jwkToPublicKeyBytes(jwk: OkpJwk): Uint8Array {
-  if (jwk.kty !== "OKP" || jwk.crv !== "X25519" || !jwk.x) throw new Error("INVALID_ENVELOPE");
+  if (jwk.kty !== "OKP" || jwk.crv !== "X25519" || !jwk.x) throw new InvalidEnvelopeError("INVALID_ENVELOPE");
   return Buffer.from(jwk.x.replace(/-/g, "+").replace(/_/g, "/"), "base64");
 }
 
 export function jwkToPrivateKeyBytes(jwk: OkpJwk): Uint8Array {
-  if (!jwk.d) throw new Error("INVALID_ENVELOPE");
+  if (!jwk.d) throw new InvalidEnvelopeError("INVALID_ENVELOPE");
   return Buffer.from(jwk.d.replace(/-/g, "+").replace(/_/g, "/"), "base64");
 }
 
@@ -64,18 +73,18 @@ function parseCacheHeaders(headers: Headers): number | undefined {
 }
 
 export async function fetchJwks(url: string, opts?: { minTtlMs?: number; maxTtlMs?: number }): Promise<Jwks> {
-  if (!url.startsWith("https://")) throw new Error("JWKS_HTTPS_REQUIRED");
+  if (!url.startsWith("https://")) throw new JwksHttpsRequiredError("JWKS_HTTPS_REQUIRED");
   const now = Date.now();
   const cached = jwksCache.get(url);
   if (cached && cached.exp > now) return cached.jwks;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`JWKS_HTTP_${res.status}`);
+  if (!res.ok) throw new JwksHttpError(`JWKS_HTTP_${res.status}`);
   const jwks = (await res.json()) as Jwks;
-  if (!jwks || !Array.isArray(jwks.keys)) throw new Error("JWKS_INVALID");
+  if (!jwks || !Array.isArray(jwks.keys)) throw new JwksInvalidError("JWKS_INVALID");
   for (const k of jwks.keys) {
-    if (k.kty !== "OKP" || k.crv !== "X25519" || typeof k.x !== "string") throw new Error("JWKS_KEY_INVALID");
-    if (k.use && k.use !== "enc") throw new Error("JWKS_KEY_USE_INVALID");
-    if (!k.kid || typeof k.kid !== "string") throw new Error("JWKS_KID_INVALID");
+    if (k.kty !== "OKP" || k.crv !== "X25519" || typeof k.x !== "string") throw new JwksKeyInvalidError("JWKS_KEY_INVALID");
+    if (k.use && k.use !== "enc") throw new JwksKeyUseInvalidError("JWKS_KEY_USE_INVALID");
+    if (!k.kid || typeof k.kid !== "string") throw new JwksKidInvalidError("JWKS_KID_INVALID");
   }
   let ttl = parseCacheHeaders(res.headers) ?? 300_000;
   ttl = clamp(ttl, opts?.minTtlMs ?? 60_000, opts?.maxTtlMs ?? 3_600_000);
@@ -85,4 +94,19 @@ export async function fetchJwks(url: string, opts?: { minTtlMs?: number; maxTtlM
 
 export function setJwks(url: string, jwks: Jwks, ttlMs = 300_000) {
   jwksCache.set(url, { jwks, exp: Date.now() + ttlMs });
+}
+
+export function generateJwks(keys: Array<{ jwk: OkpJwk; kid: string }>): Jwks {
+  return {
+    keys: keys.map(({ jwk, kid }) => ({
+      ...jwk,
+      kid,
+      use: "enc",
+      alg: "ECDH-ES"
+    }))
+  };
+}
+
+export function generateSingleJwks(jwk: OkpJwk, kid: string): Jwks {
+  return generateJwks([{ jwk, kid }]);
 }

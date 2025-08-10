@@ -39,47 +39,73 @@ def validate_x402_core(x: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def build_canonical_aad(namespace: str, x402: Dict[str, Any], app: Optional[Dict[str, Any]] = None) -> Tuple[bytes, Dict[str, Any], Optional[Dict[str, Any]]]:
+def build_canonical_aad(
+    namespace: str,
+    payload: Dict[str, Any],
+    extensions: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[bytes, Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[List[Dict[str, Any]]]]:
     if not namespace or namespace.lower() == "x402":
         raise NsForbidden("NS_FORBIDDEN")
-    xv = validate_x402_core(x402)
-    # app normalization with extensions
-    app_norm: Optional[Dict[str, Any]] = None
-    if app:
-        if "x402" in app or any(str(k).lower().startswith("x402") for k in app.keys()):
-            raise NsCollision("NS_COLLISION")
-        copy: Dict[str, Any] = dict(app)
-        exts = copy.get("extensions")
-        if isinstance(exts, list):
-            seen = set()
-            norm_exts: List[Dict[str, Any]] = []
-            for e in exts:
-                hdr = str((e or {}).get("header") or "")
-                if not is_approved_extension_header(hdr):
-                    raise ValueError("X402_EXTENSION_UNAPPROVED")
-                canon_hdr = canonicalize_extension_header(hdr)
-                if canon_hdr.lower() in seen:
-                    raise ValueError("X402_EXTENSION_DUPLICATE")
-                payload = (e or {}).get("payload")
-                if not isinstance(payload, dict) or len(payload.keys()) == 0:
-                    raise ValueError("X402_EXTENSION_PAYLOAD")
-                ext_obj = {"header": canon_hdr, "payload": payload}
-                for k, v in (e or {}).items():
-                    if k in ("header", "payload"):
-                        continue
-                    ext_obj[k] = v
-                norm_exts.append(_deep_canonicalize(ext_obj))
-                seen.add(canon_hdr.lower())
-            norm_exts.sort(key=lambda x: x.get("header", "").lower())
-            copy["extensions"] = norm_exts
-        app_norm = json.loads(_canonical_json(copy))
-    x_json = _canonical_json(xv)
-    app_json = _canonical_json(app_norm) if app_norm else ""
+    
+    request = payload.get("request")
+    response = payload.get("response")
+    x402 = payload.get("x402")
+    
+    primary_json = ""
+    x402_normalized, request_normalized, response_normalized = None, None, None
+
+    if x402 is not None:
+        x = validate_x402_core(x402)
+        primary_json = _canonical_json(x)
+        x402_normalized = json.loads(primary_json)
+    elif request is not None:
+        primary_json = _canonical_json(request)
+        request_normalized = json.loads(primary_json)
+    elif response is not None:
+        primary_json = _canonical_json(response)
+        response_normalized = json.loads(primary_json)
+
+    extensions_normalized = None
+    extensions_json = ""
+    if extensions:
+        seen = set()
+        norm_exts: List[Dict[str, Any]] = []
+        for e in extensions:
+            hdr = str((e or {}).get("header") or "")
+            if not is_approved_extension_header(hdr):
+                raise ValueError("X402_EXTENSION_UNAPPROVED")
+            canon_hdr = canonicalize_extension_header(hdr)
+            if canon_hdr.lower() in seen:
+                raise ValueError("X402_EXTENSION_DUPLICATE")
+            ext_payload = (e or {}).get("payload")
+            if not isinstance(ext_payload, dict) or len(ext_payload.keys()) == 0:
+                raise ValueError("X402_EXTENSION_PAYLOAD")
+            ext_obj = {"header": canon_hdr, "payload": ext_payload}
+            for k, v in (e or {}).items():
+                if k in ("header", "payload"):
+                    continue
+                ext_obj[k] = v
+            norm_exts.append(_deep_canonicalize(ext_obj))
+            seen.add(canon_hdr.lower())
+        norm_exts.sort(key=lambda x: x.get("header", "").lower())
+        extensions_normalized = norm_exts
+        extensions_json = _canonical_json(extensions_normalized)
+        
     prefix = f"{namespace}|v1|"
-    suffix = f"|{app_json}" if app else "|"
-    full = prefix + x_json + suffix
-    return full.encode("utf-8"), json.loads(x_json), app_norm
+    suffix = f"|{extensions_json}" if extensions else "|"
+    full = prefix + primary_json + suffix
+    return (
+        full.encode("utf-8"),
+        x402_normalized,
+        request_normalized,
+        response_normalized,
+        extensions_normalized,
+    )
 
 
-def canonical_aad(namespace: str, x402: Dict[str, Any], app: Optional[Dict[str, Any]] = None) -> bytes:
-    return build_canonical_aad(namespace, x402, app)[0] 
+def canonical_aad(
+    namespace: str,
+    payload: Dict[str, Any],
+    extensions: Optional[List[Dict[str, Any]]] = None,
+) -> bytes:
+    return build_canonical_aad(namespace, payload, extensions)[0] 

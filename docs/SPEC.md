@@ -16,8 +16,20 @@
 ## Core x402 Object Structure
 
 The x402 core object must include:
-- `header`: "X-Payment" or "X-Payment-Response" (case-insensitive)
-- `payload`: a non-empty object containing payment details
+- `header`: "X-Payment", "X-Payment-Response", or "" (empty for confidential requests)
+- `payload`: a non-empty object containing payment details or confidential data
+
+### Header Usage Rules
+
+- **"X-Payment"**: Client requests with payment (no httpResponseCode)
+- **"X-Payment-Response"**: Server responses with payment receipt (requires httpResponseCode: 200)
+- **"" (empty)**: Confidential requests/responses (402 or other status codes)
+
+### HTTP Response Code Validation
+
+- **402 responses**: `x402.header` MUST be `""` (empty) - never "X-Payment" or "X-Payment-Response"
+- **X-Payment**: No `httpResponseCode` should be set (client requests)
+- **X-Payment-Response**: Requires `httpResponseCode: 200`
 
 Example x402 object:
 ```json
@@ -51,9 +63,7 @@ Example x402 object:
 const hpke = createHpke({
   namespace: "myapp",
   // Optional: set defaults for all operations
-  x402: { header: "X-Payment", payload: { /* default payment */ } },
-  app: { traceId: "default", model: "gpt-4" },
-  publicEntities: "all" // or ["X-PAYMENT", "X-402-Routing"] for specific headers
+  publicEntities: "all" // or ["request", "X-402-Routing"] for specific entities
 });
 ```
 
@@ -62,10 +72,45 @@ const hpke = createHpke({
 hpke = create_hpke(
     namespace="myapp",
     # Optional: set defaults for all operations
-    x402={"header": "X-Payment", "payload": {"/* default payment */"}},
-    app={"traceId": "default", "model": "gpt-4"},
-    public_entities="all"  # or ["X-PAYMENT", "X-402-Routing"] for specific headers
+    public_entities="all"  # or ["request", "X-402-Routing"] for specific entities
 )
+```
+
+### Sealing Payloads
+
+The `seal` method accepts one of three mutually exclusive payload types:
+
+- **`request`**: For generic client-to-server messages.
+- **`response`**: For generic server-to-client messages.
+- **`x402`**: For specialized `402` payment protocol messages.
+
+#### Generic Request/Response
+
+```typescript
+// Seal a request
+const { envelope, publicJsonBody } = await hpke.seal({
+  request: { action: "getData", params: { id: 123 } },
+  // ... other seal params
+  public: { makeEntitiesPublic: ["request"] }
+});
+```
+
+If `makeEntitiesPublic` includes `"request"` or `"response"`, the corresponding object will be returned as a JSON body in the `publicJsonBody` field.
+
+#### Payment Protocol (`x402`)
+
+The `x402` payload is used for handling `X-Payment` and `X-Payment-Response` headers.
+
+```typescript
+// Seal an X-Payment header
+const { envelope, publicHeaders } = await hpke.seal({
+  x402: {
+    header: "X-Payment",
+    payload: { /* ... */ }
+  },
+  // ... other seal params
+  public: { makeEntitiesPublic: ["X-Payment"] }
+});
 ```
 
 ### Sidecar Generation
@@ -79,7 +124,7 @@ Use `public` in `seal()` to control sidecar behavior:
 
 ### HTTP Response Code Behavior
 
-The `httpResponseCode` parameter controls sidecar behavior:
+The `httpResponseCode` parameter controls sidecar behavior and enforces header validation:
 
 - **402 responses**: Never emit X-PAYMENT headers in sidecar (only approved extensions)
 - **Other responses**: Can emit both payment headers and approved extensions
@@ -87,8 +132,28 @@ The `httpResponseCode` parameter controls sidecar behavior:
 
 ## Extensions (optional)
 
-- Approved extension headers (v1): `X-402-Routing`, `X-402-Limits`, `X-402-Acceptable`, `X-402-Metadata`.
+- Approved extension headers (v1): `X-402-Routing`, `X-402-Limits`, `X-402-Acceptable`, `X-402-Metadata`, `X-402-Security`.
 - Place as objects in `app.extensions`: each `{ header, payload, ... }` is canonicalized and AAD-bound; optionally uplift via `public.makeEntitiesPublic`.
+
+### X-402-Security Extension
+
+The `X-402-Security` extension enables security negotiation and key management:
+
+```typescript
+// Example X-402-Security payload
+{
+  jwksUrl: "https://example.com/.well-known/jwks.json",
+  // OR inline JWKS
+  jwks: generateJwks([{ jwk: publicKey, kid: "key1" }]),
+  minKeyStrength: 256,
+  allowedSuites: ["X25519", "P-256"]
+}
+```
+
+This extension supports:
+- **Key Discovery**: Share JWKS endpoints or inline keys
+- **Security Negotiation**: Specify minimum key strength and allowed algorithms
+- **Client Key Rotation**: Provide fresh keys for each request
 
 ## Media type
 

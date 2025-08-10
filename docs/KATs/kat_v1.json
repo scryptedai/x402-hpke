@@ -6,96 +6,41 @@
       "name": "smoke-1",
       "ns": "myapp",
       "kid": "kid1",
-      "x402": {
-        "invoiceId": "inv_1",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "1000",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650000,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      "request": {
+        "action": "smokeTest"
       },
       "plaintext_b64u": "aGVsbG8",
       "eph_seed32_b64u": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-      
     },
     {
-      "name": "with-app-and-headers",
+      "name": "with-extensions-and-headers",
       "ns": "myapp",
-      "kid": "kid-app-h",
-      "x402": {
-        "invoiceId": "inv_app_h",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "2000",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650100,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      "kid": "kid-ext-h",
+      "request": {
+        "action": "withExtensions"
       },
-      "app": { "traceId": "abc-123", "region": "us" },
+      "extensions": [
+        {
+          "header": "X-402-Routing",
+          "payload": { "service": "test-runner" }
+        }
+      ],
       "sidecar_as": "headers",
-      "allowlist": ["traceId"],
+      "public": ["X-402-Routing"],
       "plaintext_b64u": "YXBwLWhlYWRlcnM",
       "eph_seed32_b64u": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEA"
     },
     {
-      "name": "with-app-and-json",
+      "name": "with-public-request-body",
       "ns": "myapp",
-      "kid": "kid-app-j",
-      "x402": {
-        "invoiceId": "inv_app_j",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "3000",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650200,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      "kid": "kid-body-j",
+      "request": {
+        "action": "publicBody"
       },
-      "app": { "traceId": "xyz-789" },
       "sidecar_as": "json",
-      "allowlist": ["traceId"],
+      "public": ["request"],
       "plaintext_b64u": "anNvbi1zaWRlY2Fy",
       "eph_seed32_b64u": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA"
-    },
-    {
-      "name": "with-replytojwk",
-      "ns": "myapp",
-      "kid": "kid-replytojwk",
-      "x402": {
-        "invoiceId": "inv_reply_jwk",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "4000",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650300,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "replyToJwk": { "kty": "OKP", "crv": "X25519", "x": "AAAAAAAAAAAAAAAAAAAAAA" }
-      },
-      "plaintext_b64u": "cmVwbHl0by1qd2s",
-      "eph_seed32_b64u": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD"
-    },
-    {
-      "name": "with-reply-publicok",
-      "ns": "myapp",
-      "kid": "kid-replypub",
-      "x402": {
-        "invoiceId": "inv_reply_pub",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "5000",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650400,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "replyPublicOk": true,
-        "replyToJwk": { "kty": "OKP", "crv": "X25519", "x": "AQEBAQEBAQEBAQEBAQEBAQ" }
-      },
-      "plaintext_b64u": "cmVwbHktcHVibGljb2s",
-      "eph_seed32_b64u": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ"
     }
   ]
 }

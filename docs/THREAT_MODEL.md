@@ -88,6 +88,7 @@ This document outlines the security goals, non-goals, attacker model, and mitiga
 - **HTTPS only**: JWKS endpoints require secure transport
 - **Key rotation**: Support for regular key updates
 - **Key validation**: Verification of key format and parameters
+- **X-402-Security extension**: Enables negotiation of key strength and algorithms
 
 ### 2. Sidecar Security
 
@@ -100,6 +101,7 @@ This document outlines the security goals, non-goals, attacker model, and mitiga
 - **Case-insensitive**: Header names normalized during processing
 - **Whitespace handling**: Proper OWS trimming and validation
 - **Extension validation**: Only approved extensions allowed
+- **HTTP response code validation**: Enforces proper header usage for 402, 200, and other status codes
 
 ### 3. Implementation Security
 
@@ -119,19 +121,16 @@ This document outlines the security goals, non-goals, attacker model, and mitiga
 
 **Attack**: Attacker replays captured encrypted messages
 **Mitigation**: 
-- Include unique identifiers in AAD (e.g., `requestId`, `nonce`)
+- Include unique identifiers in the primary payload (e.g., `requestId`, `nonce`)
 - Implement application-level deduplication
-- Use short-lived keys for high-risk contexts
+- Use short-lived keys for high-risk contexts via X-402-Security extension
 
 **Example**:
 ```typescript
-const x402 = {
-  header: "X-Payment",
-  payload: {
-    requestId: crypto.randomUUID(),
-    timestamp: Date.now(),
-    // ... other payment details
-  }
+const request = {
+  requestId: crypto.randomUUID(),
+  timestamp: Date.now(),
+  // ... other request details
 };
 ```
 
@@ -159,6 +158,7 @@ if (!timingSafeEqual(reconstructedAad, envelope.aad)) {
 - `kid` field uniquely identifies keys
 - JWKS validation ensures key format
 - Namespace binding prevents cross-application attacks
+- X-402-Security extension for explicit key negotiation
 
 **Example**:
 ```typescript
@@ -186,6 +186,15 @@ if (!timingSafeEqual(aad1, aad2)) {
 }
 ```
 
+### 5. Improper Header Usage
+
+**Attack**: Attacker sends X-Payment header with 402 response to confuse client
+**Mitigation**:
+- Strict validation of header usage based on HTTP response code
+- `x402.header` must be empty for 402 responses
+- `X-Payment-Response` requires 200 status code
+- `X-Payment` must not have a response code set
+
 ## Security Recommendations
 
 ### 1. Application Design
@@ -201,6 +210,7 @@ if (!timingSafeEqual(aad1, aad2)) {
 - **Key storage**: Store private keys securely (HSM, key management service)
 - **Access control**: Limit access to private keys
 - **Audit logging**: Log all key operations
+- **X-402-Security**: Use for secure key negotiation and rotation
 
 ### 3. Deployment
 

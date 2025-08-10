@@ -12,20 +12,34 @@ AAD provides integrity protection and binding for all x402 metadata and applicat
 
 ## AAD Structure
 
-AAD bytes = UTF‑8 of: `<ns>|v1|` + json(x402_core) + `|` + json(app?)
+AAD bytes = UTF‑8 of: `<ns>|v1|` + json(primary_payload) + `|` + json(extensions?)
 
-### Core (required)
+### Primary Payload
 
-- `x402_core` is a KV object that MUST include:
-  - `header`: "X-Payment" or "X-Payment-Response" (case-insensitive input; canonicalized in AAD)
-  - `payload`: a non-empty object containing payment details
-  - Additional keys are allowed and included in canonicalization
+The `primary_payload` is one of the following:
 
-### App (optional)
+- **`request`**: A generic request object.
+- **`response`**: A generic response object.
+- **`x402`**: A specialized `x402` object for payment protocol messages.
 
-- `app` MAY include arbitrary KV; for standardized extensions, place an array under `app.extensions` of objects `{ header, payload, ... }`.
-- Extension headers must be on the approved list and unique; each `payload` must be a non-empty object.
+### Extensions (optional)
+
+- `extensions` is an array of `{ header, payload }` objects for approved extensions.
 - Extensions are sorted by `header` (case-insensitive) during canonicalization.
+
+## Header Usage Rules
+
+### Valid Header Values
+
+- **"X-Payment"**: Client requests with payment (no httpResponseCode)
+- **"X-Payment-Response"**: Server responses with payment receipt (requires httpResponseCode: 200)
+- **"" (empty)**: Confidential requests/responses (402 or other status codes)
+
+### HTTP Response Code Validation
+
+- **402 responses**: `x402.header` MUST be `""` (empty) - never "X-Payment" or "X-Payment-Response"
+- **X-Payment**: No `httpResponseCode` should be set (client requests)
+- **X-Payment-Response**: Requires `httpResponseCode: 200`
 
 ## Encoding (normative)
 
@@ -38,48 +52,38 @@ AAD bytes = UTF‑8 of: `<ns>|v1|` + json(x402_core) + `|` + json(app?)
 
 ```typescript
 const namespace = "myapp";
-const x402 = {
-  header: "X-Payment",
-  payload: {
-    invoiceId: "inv_123",
-    amount: "1000",
-    chainId: 8453
+const request = {
+  action: "getUserProfile",
+  userId: "user-123"
+};
+const extensions = [
+  {
+    header: "X-402-Routing",
+    payload: { service: "worker-A", priority: "high" }
   }
-};
-const app = {
-  traceId: "req_456",
-  extensions: [
-    {
-      header: "X-402-Routing",
-      payload: { service: "worker-A", priority: "high" }
-    },
-    {
-      header: "X-402-Limits", 
-      payload: { limit: 1000, remaining: 500 }
-    }
-  ]
-};
+];
 ```
 
 ### Canonicalized AAD
 
 ```
-myapp|v1|{"amount":"1000","chainId":8453,"header":"X-Payment","invoiceId":"inv_123"}|{"extensions":[{"header":"X-402-Limits","payload":{"limit":1000,"remaining":500}},{"header":"X-402-Routing","payload":{"priority":"high","service":"worker-A"}}],"traceId":"req_456"}
+myapp|v1|{"action":"getUserProfile","userId":"user-123"}|[{"header":"X-402-Routing","payload":{"priority":"high","service":"worker-A"}}]
 ```
 
 ### Breakdown
 
 1. **Namespace**: `myapp`
 2. **Version**: `v1`
-3. **x402 core**: Keys sorted alphabetically (`amount`, `chainId`, `header`, `invoiceId`)
-4. **App**: Keys sorted (`extensions`, `traceId`), extensions sorted by header (`X-402-Limits`, `X-402-Routing`)
+3. **Primary Payload**: The `request` object, canonicalized.
+4. **Extensions**: The `extensions` array, sorted and canonicalized.
 
 ## Validation
 
-- **Header validation**: Must be "X-Payment" or "X-Payment-Response" (case-insensitive)
+- **Header validation**: Must be "X-Payment", "X-Payment-Response", or "" (empty)
 - **Payload validation**: Must be a non-empty object
 - **Extension validation**: Headers must be approved and unique
 - **Namespace validation**: Cannot be "x402" (reserved)
+- **HTTP response code validation**: Enforces header usage rules
 
 ## Security Properties
 
@@ -87,3 +91,4 @@ myapp|v1|{"amount":"1000","chainId":8453,"header":"X-Payment","invoiceId":"inv_1
 - **Authenticity**: AAD cannot be modified without detection
 - **Binding**: All metadata is cryptographically bound to the encrypted payload
 - **Deterministic**: Same input always produces same AAD bytes
+- **Header validation**: Prevents improper header usage based on HTTP status codes

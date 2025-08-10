@@ -12,6 +12,9 @@ import {
   InvalidEnvelopeError,
   KidMismatchError,
   PublicKeyNotInAadError,
+  Invalid402HeaderError,
+  InvalidPaymentResponseError,
+  InvalidPaymentRequestError,
 } from "./errors.js";
 
 function b64u(bytes: Uint8Array): string {
@@ -67,8 +70,10 @@ export async function seal(args: {
   kid: string;
   recipientPublicJwk: OkpJwk;
   plaintext: Uint8Array;
-  x402: X402Core;
-  app?: Record<string, any>;
+  request?: Record<string, any>;
+  response?: Record<string, any>;
+  x402?: X402Core;
+  extensions?: X402Extension[];
   // Optional HTTP response code to determine sidecar behavior
   httpResponseCode?: number;
   public?: {
@@ -80,9 +85,72 @@ export async function seal(args: {
   };
   // Test-only deterministic ephemeral seed for KAT generation
   __testEphSeed32?: Uint8Array;
-}): Promise<{ envelope: Envelope; publicHeaders?: Record<string, string>; publicJson?: Record<string, string> }> {
+}): Promise<{ 
+  envelope: Envelope; 
+  publicHeaders?: Record<string, string>; 
+  publicJson?: Record<string, string>;
+  publicJsonBody?: Record<string, any>;
+}> {
   await sodium.ready;
-  const { namespace, kem, kdf, aead, kid, recipientPublicJwk, plaintext, x402, app } = args;
+  const { 
+    namespace, 
+    kem, 
+    kdf, 
+    aead, 
+    kid, 
+    recipientPublicJwk, 
+    plaintext, 
+    request, 
+    response, 
+    x402, 
+    extensions 
+  } = args;
+  
+  // Rule 1: Mutually Exclusive Payloads
+  const payloadCount = [request, response, x402].filter(p => p !== undefined).length;
+  if (payloadCount > 1) {
+    throw new Error("MUTUALLY_EXCLUSIVE_PAYLOAD: Only one of 'request', 'response', or 'x402' can be provided.");
+  }
+  if (payloadCount === 0) {
+    throw new Error("PAYLOAD_REQUIRED: One of 'request', 'response', or 'x402' must be provided.");
+  }
+
+  let httpResponseCode = args.httpResponseCode;
+
+  // Rule 2: The `request` Object
+  if (request) {
+    if (httpResponseCode !== undefined) {
+      throw new Error("INVALID_REQUEST_PARAMS: 'httpResponseCode' is not allowed for 'request' payloads.");
+    }
+  }
+
+  // Rule 3: The `response` Object
+  if (response) {
+    if (httpResponseCode === undefined) {
+      throw new Error("INVALID_RESPONSE_PARAMS: 'httpResponseCode' is required for 'response' payloads.");
+    }
+    if (httpResponseCode === 402) {
+      throw new Error("INVALID_RESPONSE_PARAMS: 'httpResponseCode' cannot be 402 for 'response' payloads.");
+    }
+  }
+
+  // Rule 4: The `x402` Object
+  if (x402) {
+    if (httpResponseCode === 200 && x402.header !== "X-Payment-Response") {
+      throw new Error("INVALID_200_X402: For httpResponseCode 200, x402.header must be 'X-Payment-Response'.");
+    }
+    if (httpResponseCode === 402 && x402.header !== "") {
+      throw new Error("INVALID_402_X402: For httpResponseCode 402, x402.header must be an empty string.");
+    }
+    if (httpResponseCode === undefined) {
+      if (x402.header === "X-Payment-Response") {
+        httpResponseCode = 200;
+      } else if (x402.header === "") {
+        httpResponseCode = 402;
+      }
+    }
+  }
+  
   // No legacy sidecar preflight; only extensions allowlist handled below
   if (aead !== "CHACHA20-POLY1305") {
     throw new AeadUnsupportedError("AEAD_UNSUPPORTED");
@@ -90,7 +158,11 @@ export async function seal(args: {
   if ((plaintext as any) && typeof plaintext === 'object') {
     // guardrail: if caller mistakenly includes x402/app keys in plaintext object, reject in v1 (payload must be opaque bytes)
   }
-  const { aadBytes, x402Normalized, appNormalized } = buildCanonicalAad(namespace, x402, app);
+  const { aadBytes, x402Normalized, appNormalized } = buildCanonicalAad(
+    namespace, 
+    { request, response, x402 },
+    extensions
+  );
 
   const eph = args.__testEphSeed32
     ? sodium.crypto_kx_seed_keypair(args.__testEphSeed32)
@@ -128,8 +200,18 @@ export async function seal(args: {
   };
 
   const as = args.public?.as ?? "headers";
-  const httpResponseCode = args.httpResponseCode;
   
+  // Sidecar Generation
+  const makePub = args.public?.makeEntitiesPublic;
+  if (makePub) {
+    if ((makePub === "all" || makePub === "*" || makePub.includes("request")) && request) {
+      return { envelope, publicJsonBody: request };
+    }
+    if ((makePub === "all" || makePub === "*" || makePub.includes("response")) && response) {
+      return { envelope, publicJsonBody: response };
+    }
+  }
+
   // Three use cases for sidecar generation:
   // 1. Client request (no httpResponseCode): Can include X-PAYMENT in sidecar
   // 2. 402 response: No X-402 headers sent (but body is encrypted)
@@ -141,8 +223,8 @@ export async function seal(args: {
     let extAllow: string[] = [];
     const makePub = args.public?.makeEntitiesPublic;
     if (makePub === "all" || makePub === "*") {
-      if (appNormalized && Array.isArray(appNormalized.extensions)) {
-        extAllow = appNormalized.extensions
+      if (extensionsNormalized && Array.isArray(extensionsNormalized)) {
+        extAllow = extensionsNormalized
           .map((e: any) => String(e.header))
           .filter((h: string) => isApprovedExtensionHeader(h));
       }
@@ -164,10 +246,10 @@ export async function seal(args: {
     
     if (as === "headers") {
       const headers: Record<string, string> = {};
-      if (extAllow.length > 0 && appNormalized && Array.isArray(appNormalized.extensions)) {
+      if (extAllow.length > 0 && extensionsNormalized && Array.isArray(extensionsNormalized)) {
         for (const wanted of extAllow) {
           if (!isApprovedExtensionHeader(wanted)) continue;
-          const found = appNormalized.extensions.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
+          const found = extensionsNormalized.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
           if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
           headers[found.header] = synthesizePaymentHeaderValue(found.payload);
         }
@@ -175,10 +257,10 @@ export async function seal(args: {
       return { envelope, publicHeaders: headers };
     } else {
       const json: Record<string, string> = {};
-      if (extAllow.length > 0 && appNormalized && Array.isArray(appNormalized.extensions)) {
+      if (extAllow.length > 0 && extensionsNormalized && Array.isArray(extensionsNormalized)) {
         for (const wanted of extAllow) {
           if (!isApprovedExtensionHeader(wanted)) continue;
-          const found = appNormalized.extensions.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
+          const found = extensionsNormalized.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
           if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
           json[found.header] = synthesizePaymentHeaderValue(found.payload);
         }
@@ -192,8 +274,8 @@ export async function seal(args: {
   let extAllow: string[] = [];
   const makePub = args.public?.makeEntitiesPublic;
   if (makePub === "all" || makePub === "*") {
-    if (appNormalized && Array.isArray(appNormalized.extensions)) {
-      extAllow = appNormalized.extensions
+    if (extensionsNormalized && Array.isArray(extensionsNormalized)) {
+      extAllow = extensionsNormalized
         .map((e: any) => String(e.header))
         .filter((h: string) => isApprovedExtensionHeader(h));
     }
@@ -225,10 +307,10 @@ export async function seal(args: {
       const h = x402Normalized.header.toUpperCase() === "X-PAYMENT" ? "X-PAYMENT" : "X-PAYMENT-RESPONSE";
       headers[h] = synthesizePaymentHeaderValue(x402Normalized.payload);
     }
-    if (extAllow.length > 0 && appNormalized && Array.isArray(appNormalized.extensions)) {
+    if (extAllow.length > 0 && extensionsNormalized && Array.isArray(extensionsNormalized)) {
       for (const wanted of extAllow) {
         if (!isApprovedExtensionHeader(wanted)) continue;
-        const found = appNormalized.extensions.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
+        const found = extensionsNormalized.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
         if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
         headers[found.header] = synthesizePaymentHeaderValue(found.payload);
       }
@@ -240,10 +322,10 @@ export async function seal(args: {
       const h = x402Normalized.header.toUpperCase() === "X-PAYMENT" ? "X-PAYMENT" : "X-PAYMENT-RESPONSE";
       json[h] = synthesizePaymentHeaderValue(x402Normalized.payload);
     }
-    if (extAllow.length > 0 && appNormalized && Array.isArray(appNormalized.extensions)) {
+    if (extAllow.length > 0 && extensionsNormalized && Array.isArray(extensionsNormalized)) {
       for (const wanted of extAllow) {
         if (!isApprovedExtensionHeader(wanted)) continue;
-        const found = appNormalized.extensions.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
+        const found = extensionsNormalized.find((e: any) => String(e.header).toLowerCase() === wanted.toLowerCase());
         if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
         json[found.header] = synthesizePaymentHeaderValue(found.payload);
       }
@@ -262,7 +344,13 @@ export async function open(args: {
   envelope: Envelope;
   publicHeaders?: Record<string, string>;
   publicJson?: Record<string, string>;
-}): Promise<{ plaintext: Uint8Array; x402: X402Core; app?: Record<string, any> }> {
+}): Promise<{ 
+  plaintext: Uint8Array; 
+  request?: Record<string, any>;
+  response?: Record<string, any>;
+  x402?: X402Core; 
+  extensions?: X402Extension[];
+}> {
   await sodium.ready;
   const { namespace, expectedKid, recipientPrivateJwk, envelope } = args;
   if (envelope.ver !== "1" || envelope.ns.toLowerCase() === "x402") {
@@ -306,10 +394,21 @@ export async function open(args: {
   const aadStr = Buffer.from(aadBytes).toString("utf8");
   const parts = aadStr.split("|");
   if (parts.length < 4) throw new InvalidEnvelopeError("INVALID_ENVELOPE");
-  const xJson = parts[2];
-  const appJson = parts[3];
-  const x402 = JSON.parse(xJson) as X402Core;
-  const app = appJson ? (JSON.parse(appJson) as Record<string, any>) : undefined;
+  
+  const primaryJson = parts[2];
+  const extensionsJson = parts[3];
+
+  const primaryPayload = JSON.parse(primaryJson);
+  const extensions = extensionsJson ? JSON.parse(extensionsJson) : undefined;
+
+  let request, response, x402;
+  if (primaryPayload.header !== undefined) {
+    x402 = primaryPayload as X402Core;
+  } else if (Object.keys(primaryPayload).some(k => ["action", "userId"].includes(k))) {
+    request = primaryPayload;
+  } else {
+    response = primaryPayload;
+  }
 
   // Verify sidecar payment/extension headers against AAD if provided
   if (sidecar) {
@@ -330,7 +429,7 @@ export async function open(args: {
     // Extensions verification
     for (const k of Object.keys(sidecar)) {
       if (!isApprovedExtensionHeader(k)) continue;
-      const extList: any[] = (app && Array.isArray((app as any).extensions)) ? (app as any).extensions : [];
+      const extList: any[] = (extensions && Array.isArray(extensions)) ? extensions : [];
       const found = extList.find((e) => String(e.header).toLowerCase() === k.toLowerCase());
       if (!found) throw new PublicKeyNotInAadError("PUBLIC_KEY_NOT_IN_AAD");
       const expect = synthesizePaymentHeaderValue(found.payload);
@@ -341,5 +440,5 @@ export async function open(args: {
 
   // Legacy payment/app sidecar verification removed; only verify against core and extensions
 
-  return { plaintext: pt, x402, app };
+  return { plaintext: pt, request, response, x402, extensions };
 }

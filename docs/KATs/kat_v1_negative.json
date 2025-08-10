@@ -2,78 +2,64 @@
   "version": "v1",
   "vectors": [
     {
-      "name": "missing-replyto",
+      "name": "mutually-exclusive-payload",
       "ns": "myapp",
-      "kid": "kid-missing-rt",
-      "x402": {
-        "invoiceId": "inv_missing_rt",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "100",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650500,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-      },
-      "plaintext_b64u": "bmVnLW1pc3NpbmctcnQ",
-      "expected_error": "REPLY_TO_REQUIRED"
+      "kid": "kid-mutex",
+      "request": { "action": "test" },
+      "response": { "status": "ok" },
+      "plaintext_b64u": "bmVnLW11dGV4",
+      "expected_error": "MUTUALLY_EXCLUSIVE_PAYLOAD"
     },
     {
-      "name": "replytojwks-non-https",
+      "name": "payload-required",
       "ns": "myapp",
-      "kid": "kid-rtjwks-http",
-      "x402": {
-        "invoiceId": "inv_rtjwks_http",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "200",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650600,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "replyToJwks": "http://example.com/jwks.json",
-        "replyToKid": "kid-client"
-      },
-      "plaintext_b64u": "bmVnLXJ0ancrLWh0dHA",
-      "expected_error": "REPLY_TO_JWKS_HTTPS_REQUIRED"
+      "kid": "kid-no-payload",
+      "plaintext_b64u": "bmVnLW5vLXBheWxvYWQ",
+      "expected_error": "PAYLOAD_REQUIRED"
     },
     {
-      "name": "replytojwk-bad-crv",
+      "name": "invalid-request-params",
       "ns": "myapp",
-      "kid": "kid-rtjwk-bad",
-      "x402": {
-        "invoiceId": "inv_rtjwk_bad",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "300",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650700,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "replyToJwk": { "kty": "OKP", "crv": "Ed25519", "x": "AQEBAQEBAQEBAQEBAQEBAQ" }
-      },
-      "plaintext_b64u": "bmVnLXJ0anBrLWJhZA",
-      "expected_error": "REPLY_TO_REQUIRED"
+      "kid": "kid-req-inv",
+      "request": { "action": "test" },
+      "http_response_code": 200,
+      "plaintext_b64u": "bmVnLXJlcS1pbnY",
+      "expected_error": "INVALID_REQUEST_PARAMS"
     },
     {
-      "name": "sidecar-allowlist-replypublicok",
+      "name": "invalid-response-params-no-code",
       "ns": "myapp",
-      "kid": "kid-rt-sidecar",
-      "x402": {
-        "invoiceId": "inv_rt_sidecar",
-        "chainId": 8453,
-        "tokenContract": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "amount": "400",
-        "recipient": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "expiry": 1754650800,
-        "priceHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        "replyToJwk": { "kty": "OKP", "crv": "X25519", "x": "AQEBAQEBAQEBAQEBAQEBAQ" }
-      },
-      "app": { "replyPublicOk": true, "traceId": "abc" },
-      "allowlist": ["replyPublicOk"],
-      "plaintext_b64u": "bmVnLXJ0LWFsbG93bGlzdA",
-      "expected_error": "REPLY_TO_SIDECAR_FORBIDDEN"
+      "kid": "kid-res-inv-no-code",
+      "response": { "status": "ok" },
+      "plaintext_b64u": "bmVnLXJlcy1pbnYtbm8tY29kZQ",
+      "expected_error": "INVALID_RESPONSE_PARAMS"
+    },
+    {
+      "name": "invalid-response-params-402",
+      "ns": "myapp",
+      "kid": "kid-res-inv-402",
+      "response": { "status": "ok" },
+      "http_response_code": 402,
+      "plaintext_b64u": "bmVnLXJlcy1pbnYtNDAy",
+      "expected_error": "INVALID_RESPONSE_PARAMS"
+    },
+    {
+      "name": "invalid-200-x402",
+      "ns": "myapp",
+      "kid": "kid-200-x402",
+      "x402": { "header": "X-Payment", "payload": {} },
+      "http_response_code": 200,
+      "plaintext_b64u": "bmVnLTIwMC14NDAy",
+      "expected_error": "INVALID_200_X402"
+    },
+    {
+      "name": "invalid-402-x402",
+      "ns": "myapp",
+      "kid": "kid-402-x402",
+      "x402": { "header": "X-Payment", "payload": {} },
+      "http_response_code": 402,
+      "plaintext_b64u": "bmVnLTQwMi14NDAy",
+      "expected_error": "INVALID_402_X402"
     }
   ]
 }

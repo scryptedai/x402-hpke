@@ -20,4 +20,20 @@ export class ReplyToMissingError extends X402Error {}
 export class ReplyToSidecarForbiddenError extends X402Error {}
 export class ReplyToFormatError extends X402Error {}
 export class ReplyToConflictError extends X402Error {}
+export class Invalid402HeaderError extends X402Error {}
+export class InvalidPaymentResponseError extends X402Error {}
+export class InvalidPaymentRequestError extends X402Error {}
+export class X402HeaderError extends X402Error {}
+export class X402PayloadError extends X402Error {}
+export class X402ExtensionUnapprovedError extends X402Error {}
+export class X402ExtensionDuplicateError extends X402Error {}
+export class X402ExtensionPayloadError extends X402Error {}
+export class JwksHttpsRequiredError extends X402Error {}
+export class JwksHttpError extends X402Error {}
+export class JwksInvalidError extends X402Error {}
+export class JwksKeyInvalidError extends X402Error {}
+export class JwksKeyUseInvalidError extends X402Error {}
+export class JwksKidInvalidError extends X402Error {}
+export class X402RequiredError extends X402Error {}
+export class JwksUrlRequiredError extends X402Error {}
  

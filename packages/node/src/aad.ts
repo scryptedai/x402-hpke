@@ -1,5 +1,13 @@
 import { TextEncoder } from "node:util";
-import { NsForbiddenError, NsCollisionError } from "./errors.js";
+import { 
+  NsForbiddenError, 
+  NsCollisionError,
+  X402HeaderError,
+  X402PayloadError,
+  X402ExtensionUnapprovedError,
+  X402ExtensionDuplicateError,
+  X402ExtensionPayloadError
+} from "./errors.js";
 import { X402Extension, isApprovedExtensionHeader, canonicalizeExtensionHeader } from "./extensions.js";
 
 export type X402Core = {
@@ -20,18 +28,19 @@ function deepCanonicalize(value: any): any {
   return out;
 }
 
-function canonicalizeHeaderCase(h: string): "X-Payment" | "X-Payment-Response" {
+function canonicalizeHeaderCase(h: string): "X-Payment" | "X-Payment-Response" | "" {
   const s = String(h).toLowerCase();
   if (s === "x-payment") return "X-Payment";
   if (s === "x-payment-response") return "X-Payment-Response";
-  throw new Error("X402_HEADER");
+  if (s === "") return "";
+  throw new X402HeaderError("X402_HEADER");
 }
 
 export function validateX402Core(x: any): X402Core {
   const header = canonicalizeHeaderCase(x?.header);
   const payload = x?.payload;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length === 0) {
-    throw new Error("X402_PAYLOAD");
+  if (header !== "" && (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length === 0)) {
+    throw new X402PayloadError("X402_PAYLOAD");
   }
   const extra: any = {};
   for (const k of Object.keys(x || {})) {
@@ -47,54 +56,88 @@ function canonicalJson(obj: Record<string, any>): string {
 
 export function buildCanonicalAad(
   namespace: string,
-  x402: X402Core,
-  app?: Record<string, any>
+  payload: {
+    request?: Record<string, any>;
+    response?: Record<string, any>;
+    x402?: X402Core;
+  },
+  extensions?: X402Extension[]
 ): {
   aadBytes: Uint8Array;
-  x402Normalized: X402Core;
-  appNormalized?: Record<string, any>;
+  x402Normalized?: X402Core;
+  requestNormalized?: Record<string, any>;
+  responseNormalized?: Record<string, any>;
+  extensionsNormalized?: X402Extension[];
 } {
   if (!namespace || namespace.toLowerCase() === "x402") throw new NsForbiddenError("NS_FORBIDDEN");
-  const x = validateX402Core(x402);
-  // Prepare app normalization with special handling for extensions array
-  let normalizedApp: Record<string, any> | undefined;
-  if (app) {
-    if ("x402" in app || Object.keys(app).some((k) => k.toLowerCase().startsWith("x402"))) {
+  
+  const { request, response, x402 } = payload;
+  let primaryJson = "";
+  let x402Normalized, requestNormalized, responseNormalized;
+
+  if (x402) {
+    const x = validateX402Core(x402);
+    primaryJson = canonicalJson(x);
+    x402Normalized = JSON.parse(primaryJson);
+  } else if (request) {
+    primaryJson = canonicalJson(request);
+    requestNormalized = JSON.parse(primaryJson);
+  } else if (response) {
+    primaryJson = canonicalJson(response);
+    responseNormalized = JSON.parse(primaryJson);
+  }
+
+  let extensionsNormalized;
+  let extensionsJson = "";
+  if (extensions) {
+    if ("x402" in extensions || Object.keys(extensions).some((k) => k.toLowerCase().startsWith("x402"))) {
       throw new NsCollisionError("NS_COLLISION");
     }
     const copy: any = {};
-    for (const k of Object.keys(app)) copy[k] = app[k];
-    if (Array.isArray(copy.extensions)) {
+    for (const k of Object.keys(extensions)) copy[k] = extensions[k];
+    if (Array.isArray(copy)) {
       const seen = new Set<string>();
       const exts: X402Extension[] = [];
-      for (const e of copy.extensions as any[]) {
+      for (const e of copy as any[]) {
         const hdr = String(e?.header || "");
-        if (!isApprovedExtensionHeader(hdr)) throw new Error("X402_EXTENSION_UNAPPROVED");
+        if (!isApprovedExtensionHeader(hdr)) throw new X402ExtensionUnapprovedError("X402_EXTENSION_UNAPPROVED");
         const canonHdr = canonicalizeExtensionHeader(hdr);
-        if (seen.has(canonHdr.toLowerCase())) throw new Error("X402_EXTENSION_DUPLICATE");
-        const payload = e?.payload;
-        if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length === 0) {
-          throw new Error("X402_EXTENSION_PAYLOAD");
+        if (seen.has(canonHdr.toLowerCase())) throw new X402ExtensionDuplicateError("X402_EXTENSION_DUPLICATE");
+        const extPayload = e?.payload;
+        if (!extPayload || typeof extPayload !== "object" || Array.isArray(extPayload) || Object.keys(extPayload).length === 0) {
+          throw new X402ExtensionPayloadError("X402_EXTENSION_PAYLOAD");
         }
         const extExtra: any = {};
         for (const k2 of Object.keys(e)) if (k2 !== "header" && k2 !== "payload") extExtra[k2] = e[k2];
-        exts.push({ header: canonHdr, payload, ...extExtra });
+        exts.push({ header: canonHdr, payload: extPayload, ...extExtra });
         seen.add(canonHdr.toLowerCase());
       }
       // Sort extensions by header (case-insensitive)
       exts.sort((a, b) => a.header.toLowerCase().localeCompare(b.header.toLowerCase()));
-      copy.extensions = exts.map((e) => deepCanonicalize(e));
+      extensionsNormalized = exts.map((e) => deepCanonicalize(e));
+      extensionsJson = canonicalJson(extensionsNormalized);
     }
-    normalizedApp = JSON.parse(canonicalJson(copy));
   }
-  const xJson = canonicalJson(x);
-  const appJson = normalizedApp ? canonicalJson(normalizedApp) : "";
   const prefix = `${namespace}|v1|`;
-  const suffix = normalizedApp ? `|${appJson}` : "|";
-  const full = prefix + xJson + suffix;
-  return { aadBytes: enc.encode(full), x402Normalized: JSON.parse(xJson), appNormalized: normalizedApp };
+  const suffix = extensionsJson ? `|${extensionsJson}` : "|";
+  const full = prefix + primaryJson + suffix;
+  return { 
+    aadBytes: enc.encode(full), 
+    x402Normalized, 
+    requestNormalized, 
+    responseNormalized, 
+    extensionsNormalized 
+  };
 }
 
-export function canonicalAad(namespace: string, x402: X402Core, app?: Record<string, any>): Uint8Array {
-  return buildCanonicalAad(namespace, x402, app).aadBytes;
+export function canonicalAad(
+  namespace: string, 
+  payload: {
+    request?: Record<string, any>;
+    response?: Record<string, any>;
+    x402?: X402Core;
+  },
+  extensions?: X402Extension[]
+): Uint8Array {
+  return buildCanonicalAad(namespace, payload, extensions).aadBytes;
 }

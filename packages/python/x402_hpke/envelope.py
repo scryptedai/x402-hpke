@@ -41,31 +41,58 @@ def _hkdf_sha256(ikm: bytes, info: bytes, length: int) -> bytes:
     return okm[:length]
 
 
-def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", aead: str = "CHACHA20-POLY1305", jwks_url: Optional[str] = None, x402: Optional[Dict] = None, app: Optional[Dict] = None, public_entities: Optional[object] = None):
+def create_hpke(
+    namespace: str,
+    kem: str = "X25519",
+    kdf: str = "HKDF-SHA256",
+    aead: str = "CHACHA20-POLY1305",
+    jwks_url: Optional[str] = None,
+    public_entities: Optional[object] = None,
+):
     if not namespace or namespace.lower() == "x402":
         raise NsForbidden("NS_FORBIDDEN")
 
     class _HPKE:
         suite = "X25519-HKDF-SHA256-CHACHA20POLY1305"
         version = "v1"
-        _default_x402 = x402
-        _default_app = dict(app) if isinstance(app, dict) else None
         _default_public = public_entities
-        def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, x402: Dict, app: Optional[Dict] = None, public: Optional[Dict] = None, http_response_code: Optional[int] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
+        
+        def seal(self, *, kid: str, recipient_public_jwk: Dict, plaintext: bytes, request: Optional[Dict] = None, response: Optional[Dict] = None, x402: Optional[Dict] = None, extensions: Optional[list] = None, public: Optional[Dict] = None, http_response_code: Optional[int] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
+            # Rule 1: Mutually Exclusive Payloads
+            payload_count = sum(p is not None for p in [request, response, x402])
+            if payload_count > 1:
+                raise ValueError("Only one of 'request', 'response', or 'x402' can be provided.")
+            if payload_count == 0:
+                raise ValueError("One of 'request', 'response', or 'x402' must be provided.")
+
+            # Rule 2: The `request` Object
+            if request is not None:
+                if http_response_code is not None:
+                    raise ValueError("'http_response_code' is not allowed for 'request' payloads.")
+
+            # Rule 3: The `response` Object
+            if response is not None:
+                if http_response_code is None:
+                    raise ValueError("'http_response_code' is required for 'response' payloads.")
+                if http_response_code == 402:
+                    raise ValueError("'http_response_code' cannot be 402 for 'response' payloads.")
+
+            # Rule 4: The `x402` Object
+            if x402 is not None:
+                if http_response_code == 200 and x402.get("header") != "X-Payment-Response":
+                    raise ValueError("For http_response_code 200, x402.header must be 'X-Payment-Response'.")
+                if http_response_code == 402 and x402.get("header") != "":
+                    raise ValueError("For http_response_code 402, x402.header must be an empty string.")
+                if http_response_code is None:
+                    if x402.get("header") == "X-Payment-Response":
+                        http_response_code = 200
+                    elif x402.get("header") == "":
+                        http_response_code = 402
+            
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
-            # Merge constructor app defaults with per-call app (per-call wins)
-            merged_app = {}
-            if isinstance(self._default_app, dict):
-                merged_app.update(self._default_app)
-            if isinstance(app, dict):
-                merged_app.update(app)
-            eff_app = merged_app if len(merged_app.keys()) > 0 else None
-            # Use per-call x402 or constructor default
-            eff_x402 = x402 if x402 is not None else self._default_x402
-            if eff_x402 is None:
-                raise ValueError("X402_REQUIRED")
-            aad_bytes, xnorm, _ = build_canonical_aad(namespace, eff_x402, eff_app)
+            
+            aad_bytes, xnorm, _, _, _ = build_canonical_aad(namespace, {"request": request, "response": response, "x402": x402}, extensions)
             eph_skpk = (
                 bindings.crypto_kx_seed_keypair(__test_eph_seed32)
                 if __test_eph_seed32 is not None
@@ -217,7 +244,7 @@ def create_hpke(namespace: str, kem: str = "X25519", kdf: str = "HKDF-SHA256", a
                         j[found["header"]] = synthesize_payment_header_value(found.get("payload", {}))
                 return envelope, j
 
-        def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None) -> Tuple[bytes, Dict, Optional[Dict]]:
+        def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None, public_json_body: Optional[Dict] = None) -> Tuple[bytes, Optional[Dict], Optional[Dict], Optional[Dict], Optional[list]]:
             if envelope.get("ver") != "1" or envelope.get("ns", "").lower() == "x402":
                 raise InvalidEnvelope("INVALID_ENVELOPE")
             if envelope.get("aead") != aead:

@@ -101,6 +101,26 @@ def set_jwks(url: str, jwks: dict, ttl: int = 300) -> None:
     _jwks_cache[url] = (jwks, time.time() + ttl)
 
 
+def generate_jwks(keys: list[tuple[dict, str]]) -> dict:
+    """Generate a JWKS from a list of (jwk, kid) tuples."""
+    return {
+        "keys": [
+            {
+                **jwk,
+                "kid": kid,
+                "use": "enc",
+                "alg": "ECDH-ES"
+            }
+            for jwk, kid in keys
+        ]
+    }
+
+
+def generate_single_jwks(jwk: dict, kid: str) -> dict:
+    """Generate a JWKS containing a single key."""
+    return generate_jwks([(jwk, kid)])
+
+
 def select_jwk(kid: str, jwks: dict | None = None, url: str | None = None) -> dict:
     set_ = jwks
     if set_ is None and url is not None:
