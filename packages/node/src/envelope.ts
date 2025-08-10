@@ -1,5 +1,5 @@
 import sodium from "libsodium-wrappers";
-import { buildAadFromTransport, type X402Core } from "./aad.js";
+import { buildAadFromTransport } from "./aad.js";
 import { jwkToPublicKeyBytes, jwkToPrivateKeyBytes, OkpJwk } from "./keys.js";
 import { synthesizePaymentHeaderValue } from "./payment.js";
 import { isApprovedExtensionHeader } from "./extensions.js";
@@ -277,7 +277,7 @@ export async function open(args: {
 
   let request: any, response: any, x402: any;
   if (primaryPayload && typeof primaryPayload === "object" && !Array.isArray(primaryPayload) && ("header" in primaryPayload)) {
-    x402 = primaryPayload as X402Core;
+    x402 = primaryPayload as any;
   } else if (primaryPayload && typeof primaryPayload === "object" && !Array.isArray(primaryPayload) && Object.keys(primaryPayload).some(k => ["action", "userId", "params", "resource", "get", "post"].includes(k))) {
     request = primaryPayload;
   } else {

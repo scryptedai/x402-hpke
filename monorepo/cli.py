@@ -27,9 +27,9 @@ def _run_output(cmd: list[str], cwd: str | None = None) -> tuple[int, str]:
 def build_all() -> None:
     code = 0
     # Ensure Python package env is ready first (Node tests call into Poetry)
-    code |= _run(["poetry", "env", "use", sys.executable], cwd=PY_DIR)
-    code |= _run(["poetry", "lock", "--no-update"], cwd=PY_DIR)
-    code |= _run(["poetry", "install"], cwd=PY_DIR)
+    code |= _run(["poetry", "-C", PY_DIR, "env", "use", sys.executable])
+    code |= _run(["poetry", "-C", PY_DIR, "lock", "--no-update"])
+    code |= _run(["poetry", "-C", PY_DIR, "install"])
     # Build Node package
     # Use npm install in CI, npm ci locally for determinism
     if os.getenv("GITHUB_ACTIONS") == "true":
@@ -52,25 +52,25 @@ def test_node() -> None:
 
 def test_python() -> None:
     code = 0
-    code |= _run(["poetry", "env", "use", sys.executable], cwd=PY_DIR)
-    code |= _run(["poetry", "install"], cwd=PY_DIR)
-    code |= _run(["poetry", "run", "pytest", "-q"], cwd=PY_DIR)
+    code |= _run(["poetry", "-C", PY_DIR, "env", "use", sys.executable])
+    code |= _run(["poetry", "-C", PY_DIR, "install"])
+    code |= _run(["poetry", "-C", PY_DIR, "run", "pytest", "-q"])
     sys.exit(code)
 
 
 def test_all() -> None:
     code = 0
     # Prepare Python package first so Node interop tests can call Poetry
-    code |= _run(["poetry", "env", "use", sys.executable], cwd=PY_DIR)
-    code |= _run(["poetry", "lock", "--no-update"], cwd=PY_DIR)
-    code |= _run(["poetry", "install"], cwd=PY_DIR)
+    code |= _run(["poetry", "-C", PY_DIR, "env", "use", sys.executable])
+    code |= _run(["poetry", "-C", PY_DIR, "lock", "--no-update"])
+    code |= _run(["poetry", "-C", PY_DIR, "install"])
     # Run Node tests (will invoke Poetry scripts)
     if os.getenv("GITHUB_ACTIONS") == "true":
       code |= _run(["npm", "install"], cwd=NODE_DIR)
     else:
       code |= _run(["npm", "ci"], cwd=NODE_DIR)
     code |= _run(["npm", "test"], cwd=NODE_DIR)
-    code |= _run(["poetry", "run", "pytest", "-q"], cwd=PY_DIR)
+    code |= _run(["poetry", "-C", PY_DIR, "run", "pytest", "-q"])
     sys.exit(code)
 
 
@@ -78,9 +78,9 @@ def ci() -> None:
     """CI-friendly composite: build, then test Node and Python."""
     code = 0
     # Prepare Python env/install first
-    code |= _run(["poetry", "env", "use", sys.executable], cwd=PY_DIR)
-    code |= _run(["poetry", "lock", "--no-update"], cwd=PY_DIR)
-    code |= _run(["poetry", "install"], cwd=PY_DIR)
+    code |= _run(["poetry", "-C", PY_DIR, "env", "use", sys.executable])
+    code |= _run(["poetry", "-C", PY_DIR, "lock", "--no-update"])
+    code |= _run(["poetry", "-C", PY_DIR, "install"])
     # Build and test Node
     if os.getenv("GITHUB_ACTIONS") == "true":
       code |= _run(["npm", "install"], cwd=NODE_DIR)
@@ -88,7 +88,7 @@ def ci() -> None:
       code |= _run(["npm", "ci"], cwd=NODE_DIR)
     code |= _run(["npm", "run", "build"], cwd=NODE_DIR)
     code |= _run(["npm", "test"], cwd=NODE_DIR)
-    code |= _run(["poetry", "run", "pytest", "-q"], cwd=PY_DIR)
+    code |= _run(["poetry", "-C", PY_DIR, "run", "pytest", "-q"])
     sys.exit(code)
 
 
