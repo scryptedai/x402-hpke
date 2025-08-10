@@ -1,14 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { 
-  createHpke, 
-  generateKeyPair, 
+  createHpke,
+  generateKeyPair,
   createPaymentRequired,
   createPayment,
   createPaymentResponse,
   createRequest,
-  createResponse
+  createResponse,
 } from "../../src/index.js";
+import { registerApprovedExtensionHeader } from "../../src/extensions.js";
+import * as extensions from "../../src/extensions.js";
 
 await test("createPaymentRequired helper", async (t) => {
   const hpke = createHpke({ namespace: "myapp" });
@@ -240,6 +242,8 @@ await test("createRequest helper", async (t) => {
   });
 
   await t.test("supports extensions parameter", async () => {
+    // Register test-only custom header
+    registerApprovedExtensionHeader("X-Custom");
     const extensions = [{ header: "X-Custom", payload: { custom: "value" } }];
     const { envelope } = await createRequest(
       hpke,
@@ -334,7 +338,7 @@ await test("createResponse helper", async (t) => {
     );
 
     assert.ok(envelope);
-    
+
     const opened = await hpke.open({
       recipientPrivateJwk: privateJwk,
       envelope,

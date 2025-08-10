@@ -28,26 +28,30 @@ poetry run python examples/client-python/client.py
 ## Library API Highlights
 
 ```python
-from x402_hpke import create_hpke
+from x402_hpke import (
+    create_hpke,
+    create_payment,
+    create_payment_required,
+    create_payment_response,
+)
 from x402_hpke.keys import generate_keypair
 
 hpke = create_hpke(namespace="myapp")
 PUB, PRIV = generate_keypair()
 
-env, headers = hpke.seal(
-    kid="kid-2025",
-    recipient_public_jwk=PUB,
-    plaintext=b"hello",
-    x402={  # required fields
+env, headers = create_payment(
+    hpke,
+    payment_data={  # required fields
         "invoiceId": "inv_1", "chainId": 8453, "tokenContract": "0x"+"a"*40,
         "amount": "1000", "recipient": "0x"+"b"*40, "txHash": "0x"+"c"*64,
         "expiry": 1754650000, "priceHash": "0x"+"d"*64,
     },
-    app={"traceId": "abc"},
-    public={"x402Headers": True, "appHeaderAllowlist": ["traceId"], "as": "headers"}
+    recipient_public_jwk=PUB,
+    kid="kid-2025",
+    is_public=True,
 )
 
-pt, x, app = hpke.open(
+pt, x402, _ = hpke.open(
     recipient_private_jwk=PRIV,
     envelope=env,
     expected_kid="kid-2025",

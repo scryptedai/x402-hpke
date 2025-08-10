@@ -1,12 +1,12 @@
 import { X402ExtensionUnapprovedError } from "./errors.js";
 
-export const APPROVED_EXTENSION_HEADERS = [
+export let APPROVED_EXTENSION_HEADERS: string[] = [
   "X-402-Routing",
   "X-402-Limits",
   "X-402-Acceptable",
   "X-402-Metadata",
   "X-402-Security"
-] as const;
+];
 
 export type ApprovedExtensionHeader = typeof APPROVED_EXTENSION_HEADERS[number];
 
@@ -26,14 +26,19 @@ export function canonicalizeExtensionHeader(h: string): string {
 }
 
 export const isApprovedExtensionHeader = (h: string) => {
-  return (APPROVED_EXTENSION_HEADERS as readonly string[]).some(
+  return (APPROVED_EXTENSION_HEADERS as string[]).some(
     (ah) => ah.toLowerCase() === h.toLowerCase()
   );
 };
 
-export function setApprovedExtensionHeaders(headers: string[]) {
-  // This is a bit of a hack for testing, but it works.
-  (APPROVED_EXTENSION_HEADERS as unknown as string[]) = headers;
+// Test-only helper to register additional approved headers at runtime
+export function registerApprovedExtensionHeader(header: string): void {
+  const exists = APPROVED_EXTENSION_HEADERS.some(
+    (h) => h.toLowerCase() === String(header).toLowerCase()
+  );
+  if (!exists) {
+    APPROVED_EXTENSION_HEADERS.push(header);
+  }
 }
 
 export type X402SecurityPayload = {

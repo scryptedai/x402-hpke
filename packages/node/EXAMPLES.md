@@ -35,21 +35,29 @@ npx tsx index.ts
 ## Library API Highlights
 
 ```ts
-import { createHpke, generateKeyPair, canonicalAad, fetchJwks, selectJwkFromJwks } from "@x402-hpke/node";
+import { 
+  createHpke,
+  generateKeyPair,
+  createRequest,
+  createPayment,
+  createPaymentRequired,
+  createPaymentResponse
+} from "@x402-hpke/node";
 
 const hpke = createHpke({ namespace: "myapp" });
 const { publicJwk, privateJwk } = await generateKeyPair();
 
-const { envelope, publicHeaders } = await hpke.seal({
-  kid: "kid-2025",
-  recipientPublicJwk: publicJwk,
-  plaintext: new TextEncoder().encode("hello"),
-  x402: { /* required fields */},
-  app: { traceId: "abc" },
-  public: { x402Headers: true, appHeaderAllowlist: ["traceId"], as: "headers" },
-});
+const { envelope, publicHeaders } = await createPayment(
+  hpke,
+  {
+    paymentData: { /* required fields */},
+    recipientPublicJwk: publicJwk,
+    kid: "kid-2025",
+  },
+  true // isPublic
+);
 
-const { plaintext, x402, app } = await hpke.open({
+const { plaintext, x402 } = await hpke.open({
   recipientPrivateJwk: privateJwk,
   envelope,
   expectedKid: "kid-2025",

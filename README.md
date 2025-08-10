@@ -60,7 +60,15 @@ poetry run ci
 ## Quickstart (Node)
 
 ```ts
-import { createHpke, generateKeyPair } from "@x402-hpke/node";
+import { 
+  createHpke,
+  generateKeyPair,
+  createRequest,
+  createResponse,
+  createPayment,
+  createPaymentRequired,
+  createPaymentResponse
+} from "@x402-hpke/node";
 
 const hpke = createHpke({ 
   namespace: "myapp",
@@ -69,13 +77,15 @@ const hpke = createHpke({
 const { publicJwk, privateJwk } = await generateKeyPair();
 
 // Generic request
-const { envelope, publicJsonBody } = await hpke.seal({
-  request: { action: "getUserProfile", userId: "user-123" },
-  recipientPublicJwk: publicJwk,
-  kid: "client-key-1",
-  plaintext: new TextEncoder().encode("hello"),
-  public: { makeEntitiesPublic: ["request"] }
-});
+const { envelope, publicJsonBody } = await createRequest(
+  hpke,
+  {
+    requestData: { action: "getUserProfile", userId: "user-123" },
+    recipientPublicJwk: publicJwk,
+    kid: "client-key-1",
+  },
+  true // isPublic
+);
 
 const { plaintext, request } = await hpke.open({ 
   recipientPrivateJwk: privateJwk, 
@@ -83,23 +93,42 @@ const { plaintext, request } = await hpke.open({
   expectedKid: "server-key-1"
 });
 
-// Payment request
-const { envelope: paymentEnvelope, publicHeaders } = await hpke.seal({
-  x402: {
-    header: "X-Payment",
-    payload: { /* ...EVM payment details... */ }
+// Generic response
+const { envelope: responseEnvelope, publicJsonBody: responsePublicBody } = await createResponse(
+  hpke,
+  {
+    responseData: { status: "ok", data: { a: 1 } },
+    recipientPublicJwk: publicJwk,
+    kid: "server-key-1",
+    plaintext: new TextEncoder().encode("hello"),
+    httpResponseCode: 200,
   },
-  recipientPublicJwk: publicJwk,
-  kid: "client-key-1",
-  plaintext: new TextEncoder().encode("hello"),
-  public: { makeEntitiesPublic: ["X-Payment"] }
-});
+  true // isPublic
+);
+
+// Payment request
+const { envelope: paymentEnvelope, publicHeaders } = await createPayment(
+  hpke,
+  {
+    paymentData: { /* ...EVM payment details... */ },
+    recipientPublicJwk: publicJwk,
+    kid: "client-key-1",
+  },
+  true // isPublic
+);
 ```
 
 ## Quickstart (Python)
 
 ```python
-from x402_hpke import create_hpke
+from x402_hpke import (
+    create_hpke,
+    create_request,
+    create_response,
+    create_payment,
+    create_payment_required,
+    create_payment_response,
+)
 from x402_hpke.keys import generate_keypair
 
 hpke = create_hpke(namespace="myapp")
@@ -107,30 +136,38 @@ hpke = create_hpke(namespace="myapp")
 PUB, PRIV = generate_keypair()
 
 # Generic request
-env, body = hpke.seal(
-    request={"action": "getUserProfile", "userId": "user-123"},
+env, body = create_request(
+    hpke,
+    request_data={"action": "getUserProfile", "userId": "user-123"},
     recipient_public_jwk=PUB,
     kid="client-key-1",
-    plaintext=b"hello",
-    public={"makeEntitiesPublic": ["request"]}
+    is_public=True,
 )
 
-pt, req = hpke.open(
+pt, req, _ = hpke.open(
     recipient_private_jwk=PRIV, 
     envelope=env,
     expected_kid="server-key-1"
 )
 
+# Generic response
+env, body = create_response(
+    hpke,
+    response_data={"status": "ok", "data": {"a": 1}},
+    recipient_public_jwk=PUB,
+    kid="server-key-1",
+    plaintext=b"hello",
+    http_response_code=200,
+    is_public=True,
+)
+
 # Payment request
-env, headers = hpke.seal(
-    x402={
-        "header": "X-Payment",
-        "payload": { /* ...EVM payment details... */ }
-    },
+env, headers = create_payment(
+    hpke,
+    payment_data={ /* ...EVM payment details... */ },
     recipient_public_jwk=PUB,
     kid="client-key-1",
-    plaintext=b"hello",
-    public={"makeEntitiesPublic": ["X-Payment"]}
+    is_public=True,
 )
 ```
 
@@ -142,9 +179,21 @@ The `x402-hpke` library provides a flexible framework for secure, authenticated 
 - **`response`**: For generic server-to-client messages.
 - **`x402`**: For specialized `402` payment protocol messages.
 
+### Typical 402 payment flows
+
+Most production integrations center on the x402 flows. At a high level:
+
+- Price quote (server → client): server returns a 402 Payment Required using `createPaymentRequired` (x402 header is empty, body carries quote details)
+- Client payment (client → server): client submits an X-Payment using `createPayment`
+- Settlement/receipt (server → client): server returns X-Payment-Response using `createPaymentResponse`
+
+You will still use the generic surfaces when needed:
+- `createRequest` to initiate a non-payment request (e.g., ask for a price or send opaque app payload)
+- `createResponse` to return non-402 responses (e.g., 200/4xx error details that are not part of x402)
+
 ### Generic Request/Response
 
-For most use cases, you'll use the `request` and `response` payloads. This provides a simple and intuitive API for securing your data.
+Request/response are utility surfaces used to initiate a quote/request and to handle non-402 responses. They provide a simple API for sealing opaque app data when you are not sending an x402 header.
 
 ```typescript
 // Seal a request
@@ -189,9 +238,12 @@ The x402 core object must include:
 
 ### HTTP Response Code Validation
 
-- **402 responses**: `x402.header` MUST be `""` (empty) - never "X-Payment" or "X-Payment-Response"
-- **X-Payment**: No `httpResponseCode` should be set (client requests)
-- **X-Payment-Response**: Requires `httpResponseCode: 200`
+- **`request` payloads**: `httpResponseCode` is not allowed.
+- **`response` payloads**: `httpResponseCode` is required.
+- **`x402` payloads**:
+  - **`X-Payment`**: `httpResponseCode` is not allowed.
+  - **`X-Payment-Response`**: `httpResponseCode` is required and must be `200`.
+  - **`header: ""`**: `httpResponseCode` is required and must be `402`.
 
 Example x402 object:
 ```json

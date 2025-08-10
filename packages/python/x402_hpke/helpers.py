@@ -78,23 +78,21 @@ def create_request(
     kid: str,
     extensions: Optional[List[Dict[str, Any]]] = None,
     is_public: bool = False,
-) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """
     A helper to create a general-purpose request envelope.
     """
     # Put request data in plaintext to allow extensions to work properly
     plaintext = json.dumps(request_data).encode("utf-8")
 
-    env, public_body = hpke.seal(
+    return hpke.seal(
         request=request_data,
-        public={"makeEntitiesPublic": ["*"], "as": "json"} if is_public else None,
+        public={"makeEntitiesPublic": ["request", *[e["header"] for e in extensions]]} if is_public and extensions else {"makeEntitiesPublic": ["request"]} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         plaintext=plaintext,
         kid=kid,
         extensions=extensions,
     )
-
-    return env, None, public_body if is_public else None
 
 def create_response(
     hpke: object,

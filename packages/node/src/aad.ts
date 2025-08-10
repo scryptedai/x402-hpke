@@ -89,34 +89,27 @@ export function buildCanonicalAad(
 
   let extensionsNormalized;
   let extensionsJson = "";
-  if (extensions) {
-    if ("x402" in extensions || Object.keys(extensions).some((k) => k.toLowerCase().startsWith("x402"))) {
-      throw new NsCollisionError("NS_COLLISION");
-    }
-    const copy: any = {};
-    for (const k of Object.keys(extensions)) copy[k] = extensions[k];
-    if (Array.isArray(copy)) {
-      const seen = new Set<string>();
-      const exts: X402Extension[] = [];
-      for (const e of copy as any[]) {
-        const hdr = String(e?.header || "");
-        if (!isApprovedExtensionHeader(hdr)) throw new X402ExtensionUnapprovedError("X402_EXTENSION_UNAPPROVED");
-        const canonHdr = canonicalizeExtensionHeader(hdr);
-        if (seen.has(canonHdr.toLowerCase())) throw new X402ExtensionDuplicateError("X402_EXTENSION_DUPLICATE");
-        const extPayload = e?.payload;
-        if (!extPayload || typeof extPayload !== "object" || Array.isArray(extPayload) || Object.keys(extPayload).length === 0) {
-          throw new X402ExtensionPayloadError("X402_EXTENSION_PAYLOAD");
-        }
-        const extExtra: any = {};
-        for (const k2 of Object.keys(e)) if (k2 !== "header" && k2 !== "payload") extExtra[k2] = e[k2];
-        exts.push({ header: canonHdr, payload: extPayload, ...extExtra });
-        seen.add(canonHdr.toLowerCase());
+  if (Array.isArray(extensions) && extensions.length > 0) {
+    const seen = new Set<string>();
+    const exts: X402Extension[] = [];
+    for (const e of extensions as any[]) {
+      const hdr = String(e?.header || "");
+      if (!isApprovedExtensionHeader(hdr)) throw new X402ExtensionUnapprovedError("X402_EXTENSION_UNAPPROVED");
+      const canonHdr = canonicalizeExtensionHeader(hdr);
+      if (seen.has(canonHdr.toLowerCase())) throw new X402ExtensionDuplicateError("X402_EXTENSION_DUPLICATE");
+      const extPayload = e?.payload;
+      if (!extPayload || typeof extPayload !== "object" || Array.isArray(extPayload) || Object.keys(extPayload).length === 0) {
+        throw new X402ExtensionPayloadError("X402_EXTENSION_PAYLOAD");
       }
-      // Sort extensions by header (case-insensitive)
-      exts.sort((a, b) => a.header.toLowerCase().localeCompare(b.header.toLowerCase()));
-      extensionsNormalized = exts.map((e) => deepCanonicalize(e));
-      extensionsJson = canonicalJson(extensionsNormalized);
+      const extExtra: any = {};
+      for (const k2 of Object.keys(e)) if (k2 !== "header" && k2 !== "payload") extExtra[k2] = e[k2];
+      exts.push({ header: canonHdr, payload: extPayload, ...extExtra });
+      seen.add(canonHdr.toLowerCase());
     }
+    // Sort extensions by header (case-insensitive)
+    exts.sort((a, b) => a.header.toLowerCase().localeCompare(b.header.toLowerCase()));
+    extensionsNormalized = exts.map((e) => deepCanonicalize(e));
+    extensionsJson = canonicalJson(extensionsNormalized);
   }
   const prefix = `${namespace}|v1|`;
   const suffix = extensionsJson ? `|${extensionsJson}` : "|";

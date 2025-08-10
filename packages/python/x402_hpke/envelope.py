@@ -138,6 +138,14 @@ def create_hpke(
                 public["makeEntitiesPublic"] = self._default_public
             as_kind = (public or {}).get("as", "headers")
             
+            # Sidecar Generation
+            make_pub = (public or {}).get("makeEntitiesPublic")
+            if make_pub:
+                if (isinstance(make_pub, str) and make_pub.lower() in ("all", "*") or (isinstance(make_pub, list) and "request" in make_pub)) and request:
+                    return envelope, request
+                if (isinstance(make_pub, str) and make_pub.lower() in ("all", "*") or (isinstance(make_pub, list) and "response" in make_pub)) and response:
+                    return envelope, response
+
             # Three use cases for sidecar generation:
             # 1. Client request (no http_response_code): Can include X-PAYMENT in sidecar
             # 2. 402 response: No X-402 headers sent (but body is encrypted)
