@@ -1,6 +1,8 @@
 import json
 from typing import Dict, Any, Tuple, Optional, List
 from .envelope import create_hpke
+from .secure_transport import x402SecureTransport, TransportType
+from .constants import CanonicalHeaders
 
 def create_payment_required(
     hpke: object,
@@ -12,14 +14,14 @@ def create_payment_required(
     """
     A helper to create a 402 Payment Required response.
     """
-    env, public_body = hpke.seal(
-        response=payment_required_data,
-        http_response_code=402,
-        public={"makeEntitiesPublic": ["*"], "as": "json"} if is_public else None,
+    transport = x402SecureTransport(TransportType.PAYMENT_REQUIRED, payment_required_data)
+    env, sidecar = hpke.seal(
+        transport=transport,
+        make_entities_public="all" if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         kid=kid,
     )
-    return env, public_body if is_public else None
+    return env, sidecar if is_public else None
 
 def create_payment(
     hpke: object,
@@ -32,15 +34,13 @@ def create_payment(
     """
     A helper to create a client-side X-Payment request.
     """
+    ext_pairs = [{"header": e.get("header"), "value": e.get("payload")} for e in (extensions or [])]
+    transport = x402SecureTransport(TransportType.PAYMENT, {"payload": payment_data}, None, ext_pairs)
     return hpke.seal(
-        x402={
-            "header": "X-Payment",
-            "payload": payment_data,
-        },
-        public={"makeEntitiesPublic": ["X-Payment"]} if is_public else None,
+        transport=transport,
+        make_entities_public=[CanonicalHeaders["X_PAYMENT"]] if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         kid=kid,
-        extensions=extensions,
     )
 
 def create_payment_response(
@@ -54,16 +54,13 @@ def create_payment_response(
     """
     A helper to create a server-side X-Payment-Response.
     """
+    ext_pairs = [{"header": e.get("header"), "value": e.get("payload")} for e in (extensions or [])]
+    transport = x402SecureTransport(TransportType.PAYMENT_RESPONSE, settlement_data, 200, ext_pairs)
     return hpke.seal(
-        x402={
-            "header": "X-Payment-Response",
-            "payload": settlement_data,
-        },
-        http_response_code=200,
-        public={"makeEntitiesPublic": ["X-Payment-Response"]} if is_public else None,
+        transport=transport,
+        make_entities_public=[CanonicalHeaders["X_PAYMENT_RESPONSE"]] if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         kid=kid,
-        extensions=extensions,
     )
 
 def create_request(
@@ -77,12 +74,13 @@ def create_request(
     """
     A helper to create a general-purpose request envelope.
     """
-    env, public_obj = hpke.seal(
-        request=request_data,
-        public={"makeEntitiesPublic": ["request"], "as": "json"} if is_public else None,
+    ext_pairs = [{"header": e.get("header"), "value": e.get("payload")} for e in (extensions or [])]
+    transport = x402SecureTransport(TransportType.OTHER_REQUEST, request_data, None, ext_pairs)
+    env, sidecar = hpke.seal(
+        transport=transport,
+        make_entities_public="all" if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         kid=kid,
-        extensions=extensions,
     )
     # Do not return public body from helper; align with Node helper behavior
     return env, None
@@ -99,13 +97,13 @@ def create_response(
     """
     A helper to create a general-purpose response envelope.
     """
-    env, public_obj = hpke.seal(
-        response=response_data,
-        http_response_code=http_response_code,
-        public={"makeEntitiesPublic": ["response"], "as": "json"} if is_public else None,
+    ext_pairs = [{"header": e.get("header"), "value": e.get("payload")} for e in (extensions or [])]
+    transport = x402SecureTransport(TransportType.OTHER_RESPONSE, response_data, http_response_code, ext_pairs)
+    env, sidecar = hpke.seal(
+        transport=transport,
+        make_entities_public="all" if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         kid=kid,
-        extensions=extensions,
     )
     # Do not return public body from helper; align with Node helper behavior
     return env, None

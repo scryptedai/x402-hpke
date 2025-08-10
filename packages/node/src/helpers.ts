@@ -29,7 +29,7 @@ export async function createPaymentRequired(
 
   return {
     envelope: result.envelope,
-    publicJsonBody: result.publicJsonBody,
+    publicJsonBody: (result as any).publicBody,
   };
 }
 

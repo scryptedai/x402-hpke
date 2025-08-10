@@ -74,14 +74,16 @@ def test_create_payment():
     )
     assert env is not None
     assert headers is None
-    pt, x402, _ = hpke.open(
+    pt, body, headers = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
     )
-    expected_plaintext = json.dumps({"header": "X-Payment", "payload": payment_data}).encode("utf-8")
-    assert pt == expected_plaintext
-    assert x402["payload"] == payment_data
+    assert json.loads(pt.decode("utf-8")) == {}
+    assert body == {}
+    found = next((h for h in headers if h.get("header") == "X-PAYMENT"), None)
+    assert found is not None
+    assert found.get("value", {}).get("payload") == payment_data
 
     # Public
     env, headers = create_payment(
@@ -94,14 +96,16 @@ def test_create_payment():
     assert env is not None
     assert headers is not None
     assert "x-payment" in {k.lower() for k in headers.keys()}
-    pt, x402, _ = hpke.open(
+    pt, body2, headers2 = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
     )
-    expected_plaintext = json.dumps({"header": "X-Payment", "payload": payment_data}).encode("utf-8")
-    assert pt == expected_plaintext
-    assert x402["payload"] == payment_data
+    assert json.loads(pt.decode("utf-8")) == {}
+    assert body2 == {}
+    found2 = next((h for h in headers2 if h.get("header") == "X-PAYMENT"), None)
+    assert found2 is not None
+    assert found2.get("value", {}).get("payload") == payment_data
 
 
 def test_create_payment_response():
@@ -118,14 +122,16 @@ def test_create_payment_response():
     )
     assert env is not None
     assert headers is None
-    pt, x402, _ = hpke.open(
+    pt, body, headers = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
     )
-    expected_plaintext = json.dumps({"header": "X-Payment-Response", "payload": settlement_data}).encode("utf-8")
-    assert pt == expected_plaintext
-    assert x402["payload"] == settlement_data
+    assert json.loads(pt.decode("utf-8")) == {}
+    assert body == {}
+    found = next((h for h in headers if h.get("header") == "X-PAYMENT-RESPONSE"), None)
+    assert found is not None
+    assert found.get("value", {}) == settlement_data
 
     # Public
     env, headers = create_payment_response(
@@ -138,14 +144,16 @@ def test_create_payment_response():
     assert env is not None
     assert headers is not None
     assert "x-payment-response" in {k.lower() for k in headers.keys()}
-    pt, x402, _ = hpke.open(
+    pt, body2, headers2 = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
         expected_kid="server-key-1",
     )
-    expected_plaintext = json.dumps({"header": "X-Payment-Response", "payload": settlement_data}).encode("utf-8")
-    assert pt == expected_plaintext
-    assert x402["payload"] == settlement_data
+    assert json.loads(pt.decode("utf-8")) == {}
+    assert body2 == {}
+    found2 = next((h for h in headers2 if h.get("header") == "X-PAYMENT-RESPONSE"), None)
+    assert found2 is not None
+    assert found2.get("value", {}) == settlement_data
 
 
 def test_create_request():
@@ -212,8 +220,7 @@ def test_create_response():
         envelope=env,
         expected_kid="server-key-1",
     )
-    expected_plaintext = json.dumps(response_data).encode("utf-8")
-    assert pt == expected_plaintext
+    assert json.loads(pt.decode("utf-8")) == response_data
     assert response == response_data
 
     # Public
@@ -233,6 +240,5 @@ def test_create_response():
         envelope=env,
         expected_kid="server-key-1",
     )
-    expected_plaintext = json.dumps(response_data).encode("utf-8")
-    assert pt == expected_plaintext
+    assert json.loads(pt.decode("utf-8")) == response_data
     assert response == response_data

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHpke, generateKeyPair } from "../../src/index.js";
+import { createHpke, generateKeyPair, x402SecureTransport } from "../../src/index.js";
 
-// New API: privateHeaders/privateBody with unified sidecar projection
+// New API: transport with unified sidecar projection
 
 await test("seal/open with privateBody only; no headers", async () => {
   const hpke = createHpke({ namespace: "myapp" });
@@ -21,15 +21,12 @@ await test("X-Payment must not have httpResponseCode; X-Payment-Response auto-20
   const hpke = createHpke({ namespace: "myapp" });
   const { publicJwk } = await generateKeyPair();
 
-  // X-Payment with response code should error
-  await assert.rejects(() => Promise.reject(new Error("skip")));
+  // X-Payment with response code should error: enforced by transport constructor
+  await assert.rejects(async () => { new x402SecureTransport("PAYMENT", { payload: { invoiceId: "s1" } }, 200) }, /PAYMENT_HTTP_CODE/);
 
-  // X-Payment-Response should auto-set 200 if missing
-  const { envelope } = await hpke.seal({
-    kid: "kid2",
-    recipientPublicJwk: publicJwk,
-    privateHeaders: [{ header: "X-Payment-Response", value: { payload: { settlementId: "s1" } } }],
-  } as any);
+  // X-Payment-Response should auto-set 200 if missing via transport
+  const t = new x402SecureTransport("PAYMENT_RESPONSE", { settlementId: "s1" });
+  const { envelope } = await hpke.seal({ kid: "kid2", recipientPublicJwk: publicJwk, transport: t } as any);
   assert.ok(envelope);
 });
 

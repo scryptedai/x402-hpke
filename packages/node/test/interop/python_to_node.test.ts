@@ -28,5 +28,5 @@ await test("python seals -> node opens", async () => {
 
   const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, expectedKid: "kidPY" });
   assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(requestPayload));
-  assert.deepStrictEqual(opened.request, requestPayload);
+  assert.deepStrictEqual(opened.body, requestPayload);
 });
