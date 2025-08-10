@@ -1,6 +1,6 @@
 import express from "express";
 import bodyParser from "body-parser";
-import { createHpke, generateKeyPair, createPayment } from "@x402-hpke/node";
+import { createHpke, generateKeyPair, createPayment } from "../../packages/node/dist/index.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 43102);

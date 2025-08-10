@@ -1,5 +1,5 @@
 import fetch from "node-fetch";
-import { createHpke, generateKeyPair, createPayment } from "@x402-hpke/node";
+import { createHpke, generateKeyPair, createPayment } from "../../packages/node/dist/index.js";
 
 (async () => {
   const hpke = createHpke({ namespace: "myapp" });

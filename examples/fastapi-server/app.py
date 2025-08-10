@@ -1,4 +1,6 @@
 from fastapi import FastAPI, Response, Request
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../packages/python")))
 from x402_hpke import create_hpke, create_payment
 import json, time
 

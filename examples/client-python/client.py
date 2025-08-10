@@ -1,4 +1,6 @@
 import requests, json, time
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../packages/python")))
 from x402_hpke import create_hpke, create_payment
 from x402_hpke.keys import generate_keypair
 
