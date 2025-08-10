@@ -1,6 +1,6 @@
 import express from "express";
 import bodyParser from "body-parser";
-import { createHpke, generateKeyPair } from "@x402-hpke/node";
+import { createHpke, generateKeyPair, createPayment } from "@x402-hpke/node";
 
 const app = express();
 app.use(bodyParser.json({ limit: "1mb" }));
@@ -13,25 +13,15 @@ let serverKeys: any;
 })();
 
 app.post("/quote", async (req, res) => {
-  const x402 = {
-    header: "X-Payment",
-    payload: {
-      invoiceId: "inv_demo",
-      chainId: 8453,
-      tokenContract: "0x" + "a".repeat(40),
-      amount: "1000",
-      recipient: "0x" + "b".repeat(40),
-      txHash: "0x" + "c".repeat(64),
-      expiry: Math.floor(Date.now() / 1000) + 600,
-      priceHash: "0x" + "d".repeat(64),
-    }
-  };
-  const { envelope, publicHeaders } = await hpke.seal({
-    kid: "kid1",
-    recipientPublicJwk: serverKeys.publicJwk,
-    x402,
-    public: { makeEntitiesPublic: ["X-PAYMENT"], as: "headers" },
-  });
+  const { envelope, publicHeaders } = await createPayment(
+    hpke,
+    {
+      paymentData: { invoiceId: "inv_demo" },
+      recipientPublicJwk: serverKeys.publicJwk,
+      kid: "kid1",
+    },
+    true
+  );
   res
     .status(402)
     .set({ "Content-Type": "application/x402-envelope+json", "Cache-Control": "no-store", ...(publicHeaders ?? {}) })

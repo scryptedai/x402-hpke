@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Response, Request
-from x402_hpke import create_hpke
+from x402_hpke import create_hpke, create_payment
 import json, time
 
 app = FastAPI()
@@ -11,27 +11,15 @@ PUB, PRIV = generate_keypair()
 
 @app.post("/quote")
 async def quote(request: Request):
-    x402 = {
-        "header": "X-Payment",
-        "payload": {
-            "invoiceId": "inv_demo",
-            "chainId": 8453,
-            "tokenContract": "0x" + "a"*40,
-            "amount": "1000",
-            "recipient": "0x" + "b"*40,
-            "txHash": "0x" + "c"*64,
-            "expiry": int(time.time()) + 600,
-            "priceHash": "0x" + "d"*64,
-        }
-    }
     # App metadata: keep sensitive items in AAD; expose only non-sensitive hints (e.g., trace id)
     trace_id = request.headers.get("X-Trace-Id") or _random_id()
     app_meta = {"traceId": trace_id, "model": "gpt-4o-mini"}
-    env, hdrs = hpke.seal(
-        kid="kid1",
+    env, hdrs = create_payment(
+        hpke,
+        payment_data={"invoiceId": "inv_demo"},
         recipient_public_jwk=PUB,
-        x402=x402,
-        public={"makeEntitiesPublic": ["X-PAYMENT"], "as": "headers"},
+        kid="kid1",
+        is_public=True,
     )
     headers = {"Cache-Control": "no-store"}
     if hdrs:
