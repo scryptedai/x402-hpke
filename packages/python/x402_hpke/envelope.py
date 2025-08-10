@@ -90,7 +90,7 @@ def create_hpke(
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
             
-            aad_bytes, xnorm, _, _, _ = build_canonical_aad(namespace, {"request": request, "response": response, "x402": x402}, extensions)
+            aad_bytes, xnorm, request_norm, response_norm, ext_norm = build_canonical_aad(namespace, {"request": request, "response": response, "x402": x402}, extensions)
             eph_skpk = (
                 bindings.crypto_kx_seed_keypair(__test_eph_seed32)
                 if __test_eph_seed32 is not None
@@ -139,6 +139,7 @@ def create_hpke(
             as_kind = (public or {}).get("as", "headers")
             
             # Sidecar Generation
+            app = {"extensions": ext_norm} if ext_norm else None
             make_pub = (public or {}).get("makeEntitiesPublic")
             if make_pub:
                 if (isinstance(make_pub, str) and make_pub.lower() in ("all", "*") or (isinstance(make_pub, list) and "request" in make_pub)) and request:

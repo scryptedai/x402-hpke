@@ -8,7 +8,10 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "sideEffects": false,
   "engines": {
@@ -19,7 +22,11 @@
     "README.md",
     "LICENSE"
   ],
-  "publishConfig": { "access": "public", "tag": "next", "provenance": true },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next",
+    "provenance": true
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scryptedai/x402-hpke.git"

@@ -115,5 +115,42 @@ await test("three use cases for sidecar generation with x402", async () => {
   assert.equal(new TextDecoder().decode(openedSuccess.plaintext), "test data");
 });
 
-// Remove KAT tests for now as they are based on the old API
-// The KAT files themselves will need to be updated to reflect the new payload structure.
+await test("KATs v1 vectors", async () => {
+  const hpke = createHpke({ namespace: "myapp" });
+
+  const katPath = path.resolve(process.cwd(), "../../docs/KATs/kat_v1.json");
+  const raw = readFileSync(katPath, "utf8");
+  const doc = JSON.parse(raw);
+  const b64uToBytes = (s: string): Buffer => {
+    if (!s) return Buffer.alloc(0);
+    const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = "===".slice((b64.length + 3) % 4);
+    return Buffer.from(b64 + pad, "base64");
+  };
+  for (const v of doc.vectors || []) {
+    const { ns, kid, request, response, x402, sidecar_as, public: pub, plaintext_b64u, eph_seed32_b64u, http_response_code } = v;
+    const { publicJwk, privateJwk } = await generateKeyPair();
+    const plaintext = b64uToBytes(plaintext_b64u || "");
+    const seed = b64uToBytes(eph_seed32_b64u || "");
+    const __testEphSeed32 = seed.length === 32 ? seed : undefined;
+    const makeEntitiesPublic = Array.isArray(pub) ? pub : (pub === "all" || pub === "*" ? "all" : undefined);
+    const as = sidecar_as === "json" ? "json" : "headers";
+    const sealArgs: any = { kid, recipientPublicJwk: publicJwk, plaintext, __testEphSeed32 };
+    if (request) sealArgs.request = request;
+    if (response) sealArgs.response = response;
+    if (x402) sealArgs.x402 = x402;
+    if (http_response_code !== undefined) sealArgs.httpResponseCode = http_response_code;
+    if (makeEntitiesPublic) sealArgs.public = { makeEntitiesPublic, as };
+    const { envelope, publicHeaders, publicJson, publicJsonBody } = await hpke.seal(sealArgs);
+    // Open to validate decryptability and AAD consistency
+    const opened = await hpke.open({ recipientPrivateJwk: privateJwk, envelope, publicHeaders, publicJson });
+    assert.ok(opened.plaintext instanceof Uint8Array);
+    // If publicJsonBody expected, ensure it's not undefined
+    if (Array.isArray(pub) && pub.includes("request") && request) {
+      assert.deepEqual(publicJsonBody, request);
+    }
+    if (Array.isArray(pub) && pub.includes("response") && response) {
+      assert.deepEqual(publicJsonBody, response);
+    }
+  }
+});
