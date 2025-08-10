@@ -3,6 +3,7 @@ import bodyParser from "body-parser";
 import { createHpke, generateKeyPair, createPayment } from "@x402-hpke/node";
 
 const app = express();
+const PORT = Number(process.env.PORT || 43102);
 app.use(bodyParser.json({ limit: "1mb" }));
 
 const hpke = createHpke({ namespace: "myapp" });
@@ -39,7 +40,7 @@ app.post("/fulfill", async (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("Express example on :3000"));
+app.listen(PORT, () => console.log(`Express example on :${PORT}`));
 
 function pickSidecarFrom(headers: any): Record<string, string> {
   const out: Record<string, string> = {};

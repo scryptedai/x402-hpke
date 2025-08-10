@@ -1,5 +1,5 @@
 import sodium from "libsodium-wrappers";
-import { buildAadFromTransport } from "./aad.js";
+import { buildAadFromTransport, type X402Core } from "./aad.js";
 import { jwkToPublicKeyBytes, jwkToPrivateKeyBytes, OkpJwk } from "./keys.js";
 import { synthesizePaymentHeaderValue } from "./payment.js";
 import { isApprovedExtensionHeader } from "./extensions.js";

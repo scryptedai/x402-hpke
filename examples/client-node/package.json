@@ -1,0 +1,17 @@
+{
+  "name": "client-node",
+  "version": "1.0.0",
+  "description": "TBD",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@x402-hpke/node": "file:../../packages/node/x402-hpke-node-0.2.0-alpha.0.tgz",
+    "node-fetch": "^3.3.2",
+    "tsx": "^4.20.3"
+  }
+}

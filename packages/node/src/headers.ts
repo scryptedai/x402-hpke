@@ -1,4 +1,13 @@
-import type { X402Fields } from "./aad.js";
+export type X402Fields = {
+  invoiceId: string;
+  chainId: number;
+  tokenContract: string;
+  amount: string;
+  recipient: string;
+  txHash: string;
+  expiry: number;
+  priceHash: string;
+};
 
 export function buildX402Headers(x: X402Fields): Record<string, string> {
   return {

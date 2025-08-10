@@ -13,5 +13,6 @@ import { createHpke, generateKeyPair, createPayment } from "@x402-hpke/node";
     },
     true // expose X-PAYMENT header publicly (optional)
   );
-  await fetch("http://localhost:3000/fulfill", { method: "POST", headers: { "Content-Type": "application/json", ...(publicHeaders||{}) }, body: JSON.stringify(envelope) });
+  const PORT = Number(process.env.PORT || 43102);
+  await fetch(`http://localhost:${PORT}/fulfill`, { method: "POST", headers: { "Content-Type": "application/json", ...(publicHeaders||{}) }, body: JSON.stringify(envelope) });
 })();

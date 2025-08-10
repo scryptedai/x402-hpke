@@ -15,6 +15,7 @@ test-all = "monorepo.cli:test_all"
 test-node = "monorepo.cli:test_node"
 test-python = "monorepo.cli:test_python"
 ci = "monorepo.cli:ci"
+demo-node = "monorepo.cli:demo_node"
 
 [build-system]
 requires = ["poetry-core"]
