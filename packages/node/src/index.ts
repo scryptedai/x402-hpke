@@ -70,10 +70,9 @@ export function createHpke(opts: CreateHpkeOptions) {
     aead,
     version: X402_HPKE_VERSION,
     suite: X402_HPKE_SUITE,
-    seal: (args: Parameters<typeof seal>[0]) => {
-      const mergedPublic = { ...(args.public ?? {}) } as any;
-      if (mergedPublic.makeEntitiesPublic === undefined && defaultMakePublic !== undefined) mergedPublic.makeEntitiesPublic = defaultMakePublic as any;
-      return seal({ ...args, public: Object.keys(mergedPublic).length ? mergedPublic : undefined, namespace: ns, kem, kdf, aead });
+    seal: (args: any) => {
+      const makeEntitiesPublic = args.makeEntitiesPublic ?? defaultMakePublic;
+      return seal({ ...args, makeEntitiesPublic, namespace: ns, kem, kdf, aead });
     },
     open: (args: Parameters<typeof open>[0]) => open({ ...args, namespace: ns, kem, kdf, aead }),
     canonicalAad: (x402: any, app?: any) => canonicalAad(ns, x402, app),

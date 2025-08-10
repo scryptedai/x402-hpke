@@ -1,6 +1,7 @@
 import { createHpke } from "./index.js";
 import { OkpJwk } from "./keys.js";
 import { X402Extension } from "./extensions.js";
+import { x402SecureTransport, CanonicalHeaders } from "./index.js";
 
 /**
  * A helper to create a 402 Payment Required response.
@@ -18,17 +19,13 @@ export async function createPaymentRequired(
   },
   isPublic: boolean = false
 ) {
+  const transport = new x402SecureTransport("PAYMENT_REQUIRED", args.paymentRequiredData);
   const result = await hpke.seal({
-    response: args.paymentRequiredData,
-    httpResponseCode: 402,
-    public: isPublic
-      ? {
-          makeEntitiesPublic: ["response"],
-        }
-      : undefined,
+    transport,
+    makeEntitiesPublic: isPublic ? "all" : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
     kid: args.kid,
-  });
+  } as any);
 
   return {
     envelope: result.envelope,
@@ -53,18 +50,15 @@ export async function createPayment(
   },
   isPublic: boolean = false
 ) {
+  const header = { header: CanonicalHeaders.X_PAYMENT, value: { payload: args.paymentData } };
+  const extensions = (args.extensions || []).map((e) => ({ header: e.header, value: e.payload }));
+  const transport = new x402SecureTransport("PAYMENT", header.value, undefined, extensions);
   const result = await hpke.seal({
-    x402: {
-      header: "X-Payment",
-      payload: args.paymentData,
-    },
-    public: isPublic ? {
-      makeEntitiesPublic: ["X-PAYMENT"]
-    } : undefined,
+    transport,
+    makeEntitiesPublic: isPublic ? [CanonicalHeaders.X_PAYMENT] : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
     kid: args.kid,
-    extensions: args.extensions,
-  });
+  } as any);
 
   return {
     envelope: result.envelope,
@@ -89,19 +83,15 @@ export async function createPaymentResponse(
   },
   isPublic: boolean = false
 ) {
+  const header = { header: CanonicalHeaders.X_PAYMENT_RESPONSE, value: args.settlementData };
+  const extensions = (args.extensions || []).map((e) => ({ header: e.header, value: e.payload }));
+  const transport = new x402SecureTransport("PAYMENT_RESPONSE", header.value, 200, extensions);
   const result = await hpke.seal({
-    x402: {
-      header: "X-Payment-Response",
-      payload: args.settlementData,
-    },
-    httpResponseCode: 200,
-    public: isPublic ? {
-      makeEntitiesPublic: ["X-PAYMENT-RESPONSE"]
-    } : undefined,
+    transport,
+    makeEntitiesPublic: isPublic ? [CanonicalHeaders.X_PAYMENT_RESPONSE] : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
     kid: args.kid,
-    extensions: args.extensions,
-  });
+  } as any);
 
   return {
     envelope: result.envelope,
@@ -126,15 +116,13 @@ export async function createRequest(
   },
   isPublic: boolean = false
 ) {
+  const transport = new x402SecureTransport("OTHER_REQUEST", args.requestData, undefined, (args.extensions || []).map((e) => ({ header: e.header, value: e.payload })));
   const result = await hpke.seal({
-    request: args.requestData,
-    public: isPublic ? {
-      makeEntitiesPublic: ["request"]
-    } : undefined,
+    transport,
+    makeEntitiesPublic: isPublic ? "all" : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
     kid: args.kid,
-    extensions: args.extensions,
-  });
+  } as any);
 
   return {
     envelope: result.envelope,
@@ -160,16 +148,13 @@ export async function createResponse(
   },
   isPublic: boolean = false
 ) {
+  const transport = new x402SecureTransport("OTHER_RESPONSE", args.responseData, args.httpResponseCode, (args.extensions || []).map((e) => ({ header: e.header, value: e.payload })));
   const result = await hpke.seal({
-    response: args.responseData,
-    httpResponseCode: args.httpResponseCode,
-    public: isPublic ? {
-      makeEntitiesPublic: ["response"]
-    } : undefined,
+    transport,
+    makeEntitiesPublic: isPublic ? "all" : undefined,
     recipientPublicJwk: args.recipientPublicJwk,
     kid: args.kid,
-    extensions: args.extensions,
-  });
+  } as any);
 
   return {
     envelope: result.envelope,

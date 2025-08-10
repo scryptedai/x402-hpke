@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Dict, Optional, Tuple, List
-from .aad import build_canonical_aad, build_canonical_aad_headers_body, canonicalize_core_header_name
+from .aad import build_canonical_aad, build_canonical_aad_headers_body, canonicalize_core_header_name, build_aad_from_transport
 from .errors import (
     NsForbidden,
     AeadUnsupported,
@@ -57,7 +57,85 @@ def create_hpke(
         version = "v1"
         _default_public = public_entities
         
-        def seal(self, *, kid: str, recipient_public_jwk: Dict, private_headers: Optional[List[Dict]] = None, private_body: Optional[Dict] = None, request: Optional[Dict] = None, response: Optional[Dict] = None, x402: Optional[Dict] = None, extensions: Optional[list] = None, public: Optional[Dict] = None, http_response_code: Optional[int] = None, plaintext: Optional[bytes] = None, __test_eph_seed32: Optional[bytes] = None) -> Tuple[Dict, Optional[Dict]]:
+        def seal(self, *, kid: str, recipient_public_jwk: Dict, private_headers: Optional[List[Dict]] = None, private_body: Optional[Dict] = None, request: Optional[Dict] = None, response: Optional[Dict] = None, x402: Optional[Dict] = None, extensions: Optional[list] = None, public: Optional[Dict] = None, http_response_code: Optional[int] = None, plaintext: Optional[bytes] = None, __test_eph_seed32: Optional[bytes] = None, transport: Optional[object] = None, make_entities_public: Optional[object] = None) -> Tuple[Dict, Optional[Dict]]:
+            # Transport-first unified API: short-circuit into transport flow
+            if transport is not None:
+                if aead != "CHACHA20-POLY1305":
+                    raise AeadUnsupported("AEAD_UNSUPPORTED")
+                core = transport.getHeader()
+                exts = transport.getExtensions() or []
+                body = transport.getBody() or {}
+                http_status = transport.getHttpResponseCode()
+                headers = ([core] if core else []) + list(exts)
+                aad_bytes, headers_norm, body_norm = build_aad_from_transport(namespace, headers, body)
+                if plaintext is None:
+                    plaintext = json.dumps(body_norm).encode("utf-8")
+                eph_skpk = (
+                    bindings.crypto_kx_seed_keypair(__test_eph_seed32)
+                    if __test_eph_seed32 is not None
+                    else bindings.crypto_kx_keypair()
+                )
+                eph_pub, eph_priv = eph_skpk
+                recipient_pub = jwk_to_public_bytes(recipient_public_jwk)
+                if recipient_pub == b"\x00" * 32 or all(b == 0 for b in recipient_pub):
+                    raise EcdhLowOrder("ECDH_LOW_ORDER")
+                shared = bindings.crypto_scalarmult(eph_priv, recipient_pub)
+                if shared == b"\x00" * 32 or all(b == 0 for b in shared):
+                    raise EcdhLowOrder("ECDH_LOW_ORDER")
+                info = (
+                    "x402-hpke:v1|KDF="
+                    + kdf
+                    + "|AEAD="
+                    + aead
+                    + "|ns="
+                    + namespace
+                    + "|enc="
+                    + _b64u(eph_pub)
+                    + "|pkR="
+                    + _b64u(recipient_pub)
+                ).encode("utf-8")
+                okm = _hkdf_sha256(shared, info, 32 + 12)
+                key, nonce = okm[:32], okm[32:]
+                ct = bindings.crypto_aead_chacha20poly1305_ietf_encrypt(plaintext, aad_bytes, nonce, key)
+                envelope = {
+                    "typ": "hpke-envelope",
+                    "ver": "1",
+                    "ns": namespace,
+                    "kid": kid,
+                    "kem": kem,
+                    "kdf": kdf,
+                    "aead": aead,
+                    "enc": _b64u(eph_pub),
+                    "aad": _b64u(aad_bytes),
+                    "ct": _b64u(ct),
+                }
+                make_pub = make_entities_public
+                if not make_pub:
+                    return envelope, None
+                def _select(keys: List[str]) -> List[str]:
+                    if isinstance(make_pub, str) and make_pub.lower() in ("all", "*"):
+                        return list(keys)
+                    if isinstance(make_pub, list):
+                        s = {str(k).lower() for k in make_pub}
+                        return [k for k in keys if k.lower() in s]
+                    return []
+                header_names = [str(h.get("header")) for h in headers_norm]
+                if http_status == 402:
+                    header_names = [h for h in header_names if h.upper() not in ("X-PAYMENT", "X-PAYMENT-RESPONSE")]
+                header_sel = _select(header_names)
+                body_keys = list((body_norm or {}).keys())
+                body_sel = _select(body_keys)
+                out: dict = {}
+                for hn in header_sel:
+                    found = next((h for h in headers_norm if str(h.get("header")).lower() == hn.lower()), None)
+                    if not found:
+                        continue
+                    out[found.get("header")] = synthesize_payment_header_value(found.get("value"))
+                for bk in body_sel:
+                    if bk in body_norm:
+                        out[bk] = body_norm[bk]
+                return (envelope, out) if out else (envelope, None)
+
             # Rule 1: Mutually Exclusive Payloads
             payload_count = sum(p is not None for p in [request, response, x402])
             if payload_count > 1:
@@ -90,8 +168,22 @@ def create_hpke(
             if aead != "CHACHA20-POLY1305":
                 raise AeadUnsupported("AEAD_UNSUPPORTED")
             
-            # New canonical path if headers/body provided
-            use_headers_body = (private_headers is not None and isinstance(private_headers, list)) or (private_body is not None)
+            # Unified transport path
+            if transport is not None:
+                if aead != "CHACHA20-POLY1305":
+                    raise AeadUnsupported("AEAD_UNSUPPORTED")
+                core = transport.getHeader()
+                exts = transport.getExtensions() or []
+                body = transport.getBody() or {}
+                http_status = transport.getHttpResponseCode()
+                headers = ([core] if core else []) + list(exts)
+                aad_bytes, headers_norm, body_norm = build_aad_from_transport(namespace, headers, body)
+                if plaintext is None:
+                    plaintext = json.dumps(body_norm).encode("utf-8")
+                # proceed to ECDH/AEAD below; sidecar computed after envelope
+            else:
+                # New canonical path if headers/body provided
+                use_headers_body = (private_headers is not None and isinstance(private_headers, list)) or (private_body is not None)
             if use_headers_body:
                 hdrs = list(private_headers or [])
                 body = dict(private_body or {})
@@ -206,21 +298,34 @@ def create_hpke(
                 "aad": _b64u(aad_bytes),
                 "ct": _b64u(ct),
             }
-            # Inject constructor defaults for public entities if not provided
-            if public is None:
-                public = {}
-            if self._default_public is not None and public.get("makeEntitiesPublic") is None:
-                public["makeEntitiesPublic"] = self._default_public
-            as_kind = (public or {}).get("as", "headers")
-            
-            # Sidecar Generation
-            app = {"extensions": ext_norm} if ext_norm else None
-            make_pub = (public or {}).get("makeEntitiesPublic")
-            if make_pub:
-                if (isinstance(make_pub, str) and make_pub.lower() in ("all", "*") or (isinstance(make_pub, list) and "request" in make_pub)) and request:
-                    return envelope, request
-                if (isinstance(make_pub, str) and make_pub.lower() in ("all", "*") or (isinstance(make_pub, list) and "response" in make_pub)) and response:
-                    return envelope, response
+            # Sidecar generation
+            if transport is not None:
+                make_pub = make_entities_public
+                if not make_pub:
+                    return envelope, None
+                def _select(keys: List[str]) -> List[str]:
+                    if isinstance(make_pub, str) and make_pub.lower() in ("all", "*"):
+                        return list(keys)
+                    if isinstance(make_pub, list):
+                        s = {str(k).lower() for k in make_pub}
+                        return [k for k in keys if k.lower() in s]
+                    return []
+                header_names = [str(h.get("header")) for h in headers_norm]
+                if http_status == 402:
+                    header_names = [h for h in header_names if h.upper() not in ("X-PAYMENT", "X-PAYMENT-RESPONSE")]
+                header_sel = _select(header_names)
+                body_keys = list((body_norm or {}).keys())
+                body_sel = _select(body_keys)
+                out: dict = {}
+                for hn in header_sel:
+                    found = next((h for h in headers_norm if str(h.get("header")).lower() == hn.lower()), None)
+                    if not found:
+                        continue
+                    out[found.get("header")] = synthesize_payment_header_value(found.get("value"))
+                for bk in body_sel:
+                    if bk in body_norm:
+                        out[bk] = body_norm[bk]
+                return (envelope, out) if out else (envelope, None)
 
             # Three use cases for sidecar generation:
             # 1. Client request (no http_response_code): Can include X-PAYMENT in sidecar
@@ -405,7 +510,7 @@ def create_hpke(
             
             return envelope, None
 
-        def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None, public_body: Optional[Dict] = None, public_json_body: Optional[Dict] = None) -> Tuple[bytes, Optional[Dict], Optional[Dict], Optional[Dict], Optional[list]]:
+        def open(self, *, recipient_private_jwk: Dict, envelope: Dict, expected_kid: Optional[str] = None, public_headers: Optional[Dict] = None, public_json: Optional[Dict] = None, public_body: Optional[Dict] = None, public_json_body: Optional[Dict] = None):
             if envelope.get("ver") != "1" or envelope.get("ns", "").lower() == "x402":
                 raise InvalidEnvelope("INVALID_ENVELOPE")
             if envelope.get("aead") != aead:

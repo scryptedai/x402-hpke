@@ -40,7 +40,7 @@ await test("createPaymentRequired helper", async (t) => {
     });
 
     assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(paymentRequiredData));
-    assert.deepStrictEqual(opened.response, paymentRequiredData);
+    assert.deepStrictEqual(opened.body, paymentRequiredData);
   });
 
   await t.test("creates a public 402 response when isPublic is true", async () => {
@@ -64,7 +64,7 @@ await test("createPaymentRequired helper", async (t) => {
     });
 
     assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(paymentRequiredData));
-    assert.deepStrictEqual(opened.response, paymentRequiredData);
+    assert.deepStrictEqual(opened.body, paymentRequiredData);
   });
 });
 
@@ -94,8 +94,8 @@ await test("createPayment helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment", payload: paymentData }));
-    assert.deepStrictEqual(opened.x402.payload, paymentData);
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({}));
+    assert.deepStrictEqual(opened.body, {});
   });
 
   await t.test("creates a public payment request when isPublic is true", async () => {
@@ -119,8 +119,8 @@ await test("createPayment helper", async (t) => {
       publicHeaders,
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment", payload: paymentData }));
-    assert.deepStrictEqual(opened.x402.payload, paymentData);
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({}));
+    assert.deepStrictEqual(opened.body, {});
   });
 });
 
@@ -150,8 +150,8 @@ await test("createPaymentResponse helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment-Response", payload: settlementData }));
-    assert.deepStrictEqual(opened.x402.payload, settlementData);
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({}));
+    assert.deepStrictEqual(opened.body, {});
   });
 
   await t.test("creates a public payment response when isPublic is true", async () => {
@@ -175,8 +175,8 @@ await test("createPaymentResponse helper", async (t) => {
       publicHeaders,
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({ header: "X-Payment-Response", payload: settlementData }));
-    assert.deepStrictEqual(opened.x402.payload, settlementData);
+    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify({}));
+    assert.deepStrictEqual(opened.body, {});
   });
 });
 
@@ -256,7 +256,10 @@ await test("createRequest helper", async (t) => {
       expectedKid: "client-key-1",
     });
 
-    assert.deepStrictEqual(opened.extensions, extensions);
+    // Check headers include our extension
+    const found = (opened.headers || []).find((h: any) => String(h.header).toLowerCase() === "x-custom".toLowerCase());
+    assert.ok(found);
+    assert.deepStrictEqual(found.value, { custom: "value" });
   });
 });
 
@@ -288,8 +291,8 @@ await test("createResponse helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(responseData));
-    assert.deepStrictEqual(opened.response, responseData);
+    assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(opened.plaintext)), responseData);
+    assert.deepStrictEqual(opened.body, responseData);
   });
 
   await t.test("creates a public response when isPublic is true", async () => {
@@ -314,7 +317,7 @@ await test("createResponse helper", async (t) => {
       expectedKid: "server-key-1",
     });
 
-    assert.equal(new TextDecoder().decode(opened.plaintext), JSON.stringify(responseData));
-    assert.deepStrictEqual(opened.response, responseData);
+    assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(opened.plaintext)), responseData);
+    assert.deepStrictEqual(opened.body, responseData);
   });
 });

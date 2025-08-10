@@ -153,3 +153,26 @@ def build_canonical_aad_headers_body(
     body_json = _canonical_json(body_norm)
     full = prefix + headers_json + "|" + body_json
     return full.encode("utf-8"), headers_norm, body_norm
+
+
+# Unified transport AAD builder: verbatim header names, deep-canonicalized values/body
+def build_aad_from_transport(
+    namespace: str,
+    headers: List[Dict[str, Any]] | None,
+    body: Dict[str, Any] | None,
+):
+    if not namespace or namespace.lower() == "x402":
+        raise NsForbidden("NS_FORBIDDEN")
+    headers_in = list(headers or [])
+    headers_norm: list[dict[str, any]] = []
+    for e in headers_in:
+        hdr = str((e or {}).get("header", ""))
+        val = _deep_canonicalize((e or {}).get("value"))
+        headers_norm.append({"header": hdr, "value": val})
+    headers_norm.sort(key=lambda x: str(x.get("header", "")).lower())
+    body_norm = _deep_canonicalize(body or {})
+    prefix = f"{namespace}|v1|"
+    headers_json = _canonical_json(headers_norm)
+    body_json = _canonical_json(body_norm)
+    full = prefix + headers_json + "|" + body_json
+    return full.encode("utf-8"), headers_norm, body_norm

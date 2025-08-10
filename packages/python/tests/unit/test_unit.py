@@ -7,12 +7,7 @@ def test_seal_open_roundtrip_with_request_payload():
     pub, priv = generate_keypair()
     request_payload = {"action": "test"}
     payload = b"hello"
-    env, _ = hpke.seal(
-        request=request_payload,
-        kid="kid1",
-        recipient_public_jwk=pub,
-        plaintext=payload,
-    )
+    env, _ = hpke.seal(request=request_payload, kid="kid1", recipient_public_jwk=pub, plaintext=payload)
     pt, req, _ = hpke.open(recipient_private_jwk=priv, envelope=env, expected_kid="kid1")
     assert pt == payload
     assert req == request_payload

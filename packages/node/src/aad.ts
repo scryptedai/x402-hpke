@@ -199,3 +199,28 @@ export function buildCanonicalAadHeadersBody(
   const full = prefix + headersJson + "|" + bodyJson;
   return { aadBytes: enc.encode(full), headersNormalized, bodyNormalized };
 }
+
+// Unified transport AAD builder: uses header names verbatim (no canonicalization),
+// deep-canonicalizes values and body, and sorts headers by case-insensitive name for stability
+export function buildAadFromTransport(
+  namespace: string,
+  headers: Array<{ header: string; value: any }>,
+  body: Record<string, any>
+): {
+  aadBytes: Uint8Array;
+  headersNormalized: Array<{ header: string; value: any }>;
+  bodyNormalized: Record<string, any>;
+} {
+  if (!namespace || namespace.toLowerCase() === "x402") throw new NsForbiddenError("NS_FORBIDDEN");
+  const headersNormalized = (headers || []).map((h) => ({
+    header: String(h?.header ?? ""),
+    value: deepCanonicalize(h?.value),
+  }));
+  headersNormalized.sort((a, b) => a.header.toLowerCase().localeCompare(b.header.toLowerCase()));
+  const bodyNormalized = deepCanonicalize(body || {}) as Record<string, any>;
+  const prefix = `${namespace}|v1|`;
+  const headersJson = JSON.stringify(headersNormalized);
+  const bodyJson = JSON.stringify(bodyNormalized);
+  const full = prefix + headersJson + "|" + bodyJson;
+  return { aadBytes: enc.encode(full), headersNormalized, bodyNormalized };
+}
