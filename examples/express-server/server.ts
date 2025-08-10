@@ -8,12 +8,12 @@ app.use(bodyParser.json({ limit: "1mb" }));
 
 const hpke = createHpke({ namespace: "myapp" });
 let serverKeys: any;
-
-(async () => {
+const ready = (async () => {
   serverKeys = await generateKeyPair();
 })();
 
 app.post("/quote", async (req, res) => {
+  await ready;
   const { envelope, publicHeaders } = await createPayment(
     hpke,
     {
@@ -30,6 +30,7 @@ app.post("/quote", async (req, res) => {
 });
 
 app.post("/fulfill", async (req, res) => {
+  await ready;
   const env = req.body;
   try {
     const sidecar: Record<string, string> = pickSidecarFrom(req.headers);
@@ -44,6 +45,11 @@ app.post("/fulfill", async (req, res) => {
     console.error("[server] error:", e?.message || e);
     res.status(400).json({ error: e.message });
   }
+});
+
+app.get("/pub", async (_req, res) => {
+  await ready;
+  res.json(serverKeys.publicJwk);
 });
 
 app.listen(PORT, () => console.log(`Express example on :${PORT}`));

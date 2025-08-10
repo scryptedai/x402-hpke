@@ -1,9 +1,12 @@
 import fetch from "node-fetch";
-import { createHpke, generateKeyPair, createPayment } from "../../packages/node/dist/index.js";
+import { createHpke, createPayment } from "../../packages/node/dist/index.js";
 
 (async () => {
   const hpke = createHpke({ namespace: "myapp" });
-  const { publicJwk } = await generateKeyPair();
+  // Fetch server public key for proper end-to-end decryption
+  const PORT = Number(process.env.PORT || 43102);
+  const pubRes = await fetch(`http://localhost:${PORT}/pub`);
+  const publicJwk = await pubRes.json();
   const { envelope, publicHeaders } = await createPayment(
     hpke,
     {
@@ -13,7 +16,6 @@ import { createHpke, generateKeyPair, createPayment } from "../../packages/node/
     },
     true // expose X-PAYMENT header publicly (optional)
   );
-  const PORT = Number(process.env.PORT || 43102);
   console.log("[client] sending to :%d", PORT);
   console.log("[client] publicHeaders:", publicHeaders);
   console.log("[client] envelope:", envelope);
