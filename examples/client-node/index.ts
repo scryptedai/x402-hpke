@@ -14,5 +14,10 @@ import { createHpke, generateKeyPair, createPayment } from "../../packages/node/
     true // expose X-PAYMENT header publicly (optional)
   );
   const PORT = Number(process.env.PORT || 43102);
-  await fetch(`http://localhost:${PORT}/fulfill`, { method: "POST", headers: { "Content-Type": "application/json", ...(publicHeaders||{}) }, body: JSON.stringify(envelope) });
+  console.log("[client] sending to :%d", PORT);
+  console.log("[client] publicHeaders:", publicHeaders);
+  console.log("[client] envelope:", envelope);
+  const resp = await fetch(`http://localhost:${PORT}/fulfill`, { method: "POST", headers: { "Content-Type": "application/json", ...(publicHeaders||{}) }, body: JSON.stringify(envelope) });
+  console.log("[client] server response status:", resp.status);
+  console.log("[client] server response body:", await resp.text());
 })();

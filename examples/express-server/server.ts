@@ -33,9 +33,15 @@ app.post("/fulfill", async (req, res) => {
   const env = req.body;
   try {
     const sidecar: Record<string, string> = pickSidecarFrom(req.headers);
+    console.log("[server] received envelope typ=%s kid=%s", env?.typ, env?.kid);
+    console.log("[server] sidecar headers:", sidecar);
     const opened = await hpke.open({ recipientPrivateJwk: serverKeys.privateJwk, envelope: env, expectedKid: env.kid, publicHeaders: sidecar });
+    console.log("[server] decrypted plaintext:", new TextDecoder().decode(opened.plaintext));
+    console.log("[server] opened.body:", opened.body);
+    console.log("[server] opened.headers:", opened.headers);
     res.json({ ok: true });
   } catch (e: any) {
+    console.error("[server] error:", e?.message || e);
     res.status(400).json({ error: e.message });
   }
 });
@@ -45,9 +51,12 @@ app.listen(PORT, () => console.log(`Express example on :${PORT}`));
 function pickSidecarFrom(headers: any): Record<string, string> {
   const out: Record<string, string> = {};
   for (const k of Object.keys(headers)) {
-    if (k.toLowerCase() === "x-x402-invoice-id") out["X-X402-Invoice-Id"] = String(headers[k]);
-    if (k.toLowerCase() === "x-x402-expiry") out["X-X402-Expiry"] = String(headers[k]);
-    if (k.toLowerCase() === "x-myapp-trace-id") out["X-myapp-Trace-Id"] = String(headers[k]);
+    const kl = k.toLowerCase();
+    if (kl === "x-payment") out["X-PAYMENT"] = String(headers[k]);
+    if (kl === "x-payment-response") out["X-PAYMENT-RESPONSE"] = String(headers[k]);
+    if (kl === "x-x402-invoice-id") out["X-X402-Invoice-Id"] = String(headers[k]);
+    if (kl === "x-x402-expiry") out["X-X402-Expiry"] = String(headers[k]);
+    if (kl === "x-myapp-trace-id") out["X-myapp-Trace-Id"] = String(headers[k]);
   }
   return out;
 }

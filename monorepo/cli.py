@@ -170,6 +170,7 @@ def demo_node() -> None:
             sys.exit(1)
 
         # Run client once
+        print("\n=== Running client example ===")
         code |= _run(["npx", "tsx", "index.ts"], cwd=EX_NODE_CLIENT)
     finally:
         # Stop server
