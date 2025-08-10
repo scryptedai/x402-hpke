@@ -134,3 +134,68 @@ export function canonicalAad(
 ): Uint8Array {
   return buildCanonicalAad(namespace, payload, extensions).aadBytes;
 }
+
+// V2 refactor types
+export type PrivateHeaderEntry = {
+  header: string;
+  value: any;
+  [k: string]: any;
+};
+
+export function canonicalizeCoreHeaderName(h: string): "X-Payment" | "X-Payment-Response" | "" | string {
+  const s = String(h || "");
+  if (s === "") return "";
+  const sl = s.toLowerCase();
+  if (sl === "x-payment") return "X-Payment";
+  if (sl === "x-payment-response") return "X-Payment-Response";
+  return s;
+}
+
+function canonicalJsonCompact(obj: any): string {
+  return JSON.stringify(deepCanonicalize(obj));
+}
+
+export function buildCanonicalAadHeadersBody(
+  namespace: string,
+  privateHeaders?: PrivateHeaderEntry[] | undefined,
+  privateBody?: Record<string, any> | undefined
+): {
+  aadBytes: Uint8Array;
+  headersNormalized: Array<{ header: string; value: any; [k: string]: any }>;
+  bodyNormalized: Record<string, any>;
+} {
+  if (!namespace || namespace.toLowerCase() === "x402") throw new NsForbiddenError("NS_FORBIDDEN");
+
+  // Normalize headers
+  const headersIn = Array.isArray(privateHeaders) ? privateHeaders : [];
+  const seen = new Set<string>();
+  const headersNormalized = headersIn.map((e) => {
+    const rawHdr = String(e?.header ?? "");
+    let hdr = canonicalizeCoreHeaderName(rawHdr);
+    if (hdr !== "X-Payment" && hdr !== "X-Payment-Response" && hdr !== "") {
+      // extension header path
+      if (!isApprovedExtensionHeader(hdr)) {
+        throw new X402ExtensionUnapprovedError("X402_EXTENSION_UNAPPROVED");
+      }
+      hdr = canonicalizeExtensionHeader(hdr);
+    }
+    const key = hdr.toLowerCase();
+    if (seen.has(key)) throw new X402ExtensionDuplicateError("X402_EXTENSION_DUPLICATE");
+    seen.add(key);
+    const out: any = { ...e };
+    out.header = hdr;
+    // Canonicalize value structure for AAD stability
+    out.value = deepCanonicalize(e?.value);
+    return out;
+  });
+  headersNormalized.sort((a, b) => a.header.toLowerCase().localeCompare(b.header.toLowerCase()));
+
+  // Normalize body
+  const bodyNormalized = privateBody ? (deepCanonicalize(privateBody) as Record<string, any>) : {};
+
+  const prefix = `${namespace}|v1|`;
+  const headersJson = canonicalJsonCompact(headersNormalized);
+  const bodyJson = canonicalJsonCompact(bodyNormalized);
+  const full = prefix + headersJson + "|" + bodyJson;
+  return { aadBytes: enc.encode(full), headersNormalized, bodyNormalized };
+}
