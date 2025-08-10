@@ -48,6 +48,8 @@ export * from "./extensions.js";
 export * from "./helpers.js";
 export { sealChunkXChaCha, openChunkXChaCha } from "./streaming.js";
 export * as X402Errors from "./errors.js";
+export { CanonicalHeaders, type HeaderEntry, type TransportType } from "./constants.js";
+export { x402SecureTransport } from "./x402SecureTransport.js";
 
 export const X402_HPKE_VERSION = "v1" as const;
 export const X402_HPKE_SUITE = "X25519-HKDF-SHA256-CHACHA20POLY1305" as const;
