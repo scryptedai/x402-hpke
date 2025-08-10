@@ -1,6 +1,7 @@
 # x402-hpke
+Secure Transport for x402 (End-to-End Encryption)
 
-Provider-agnostic HPKE envelope library for x402 — Node (TypeScript) and Python (Poetry). Canonical AAD built from a unified transport model, optional sidecar projection that is private-by-default, and deterministic interop.
+Provider-agnostic HPKE envelope library for x402 - Node (TypeScript) and Python (Poetry). Canonical AAD built from a unified transport model, optional sidecar public projection that is private-by-default, and deterministic interop.
 
 - Repository: `https://github.com/scryptedai/x402-hpke`
 - Monorepo layout:
