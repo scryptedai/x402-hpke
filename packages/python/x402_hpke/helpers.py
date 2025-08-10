@@ -77,13 +77,15 @@ def create_request(
     """
     A helper to create a general-purpose request envelope.
     """
-    return hpke.seal(
+    env, public_obj = hpke.seal(
         request=request_data,
-        public={"makeEntitiesPublic": ["request", *[e["header"] for e in extensions]]} if is_public and extensions else {"makeEntitiesPublic": ["request"]} if is_public else None,
+        public={"makeEntitiesPublic": ["request"], "as": "json"} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         kid=kid,
         extensions=extensions,
     )
+    # Do not return public body from helper; align with Node helper behavior
+    return env, None
 
 def create_response(
     hpke: object,
@@ -97,11 +99,13 @@ def create_response(
     """
     A helper to create a general-purpose response envelope.
     """
-    return hpke.seal(
+    env, public_obj = hpke.seal(
         response=response_data,
         http_response_code=http_response_code,
-        public={"makeEntitiesPublic": ["response"]} if is_public else None,
+        public={"makeEntitiesPublic": ["response"], "as": "json"} if is_public else None,
         recipient_public_jwk=recipient_public_jwk,
         kid=kid,
         extensions=extensions,
     )
+    # Do not return public body from helper; align with Node helper behavior
+    return env, None

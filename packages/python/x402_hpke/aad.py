@@ -109,3 +109,47 @@ def canonical_aad(
     extensions: Optional[List[Dict[str, Any]]] = None,
 ) -> bytes:
     return build_canonical_aad(namespace, payload, extensions)[0] 
+
+# New canonical model: headers + body
+def canonicalize_core_header_name(h: str) -> str:
+    s = str(h or "")
+    if s == "":
+        return ""
+    sl = s.lower()
+    if sl == "x-payment":
+        return "X-Payment"
+    if sl == "x-payment-response":
+        return "X-Payment-Response"
+    return s
+
+def build_canonical_aad_headers_body(
+    namespace: str,
+    private_headers: Optional[List[Dict[str, Any]]] = None,
+    private_body: Optional[Dict[str, Any]] = None,
+) -> Tuple[bytes, List[Dict[str, Any]], Dict[str, Any]]:
+    if not namespace or namespace.lower() == "x402":
+        raise NsForbidden("NS_FORBIDDEN")
+    headers_in = list(private_headers or [])
+    seen = set()
+    headers_norm: List[Dict[str, Any]] = []
+    for e in headers_in:
+        raw = str((e or {}).get("header", ""))
+        hdr = canonicalize_core_header_name(raw)
+        if hdr not in ("X-Payment", "X-Payment-Response", ""):
+            if not is_approved_extension_header(hdr):
+                raise ValueError("X402_EXTENSION_UNAPPROVED")
+            hdr = canonicalize_extension_header(hdr)
+        key = hdr.lower()
+        if key in seen:
+            raise ValueError("X402_EXTENSION_DUPLICATE")
+        seen.add(key)
+        value = _deep_canonicalize((e or {}).get("value"))
+        out = {**(e or {}), "header": hdr, "value": value}
+        headers_norm.append(out)
+    headers_norm.sort(key=lambda x: str(x.get("header", "")).lower())
+    body_norm = _deep_canonicalize(private_body or {})
+    prefix = f"{namespace}|v1|"
+    headers_json = _canonical_json(headers_norm)
+    body_json = _canonical_json(body_norm)
+    full = prefix + headers_json + "|" + body_json
+    return full.encode("utf-8"), headers_norm, body_norm

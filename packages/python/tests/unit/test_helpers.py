@@ -180,8 +180,8 @@ def test_create_request():
         is_public=True,
     )
     assert env is not None
-    assert headers is not None
-    assert "request" in {k.lower() for k in headers.keys()}
+    # Generic request bodies are not emitted as headers; optional JSON body may be returned by direct seal
+    assert headers is None
     pt, request, _ = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
@@ -226,8 +226,8 @@ def test_create_response():
         is_public=True,
     )
     assert env is not None
-    assert headers is not None
-    assert "response" in {k.lower() for k in headers.keys()}
+    # Generic responses are not emitted as headers; optional JSON body may be returned by direct seal
+    assert headers is None
     pt, response, _ = hpke.open(
         recipient_private_jwk=priv,
         envelope=env,
